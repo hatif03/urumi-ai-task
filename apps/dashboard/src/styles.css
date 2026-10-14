@@ -1,0 +1,20 @@
+:root { color: #1c1917; background: #f6f3ee; font-family: "Segoe UI", sans-serif; }
+body { margin: 0; }
+a { color: inherit; }
+main { max-width: 880px; margin: 0 auto; padding: 24px; }
+nav { display: flex; gap: 16px; align-items: center; margin-bottom: 24px; }
+nav a { text-decoration: none; }
+h1 { font-size: 1.6rem; }
+form, .card { display: grid; gap: 10px; background: white; padding: 16px; border: 1px solid #e7e0d6; border-radius: 8px; margin-bottom: 16px; }
+label { display: grid; gap: 4px; font-size: 0.9rem; }
+input, select, button, textarea { font: inherit; padding: 8px; }
+button { width: fit-content; cursor: pointer; }
+table { width: 100%; border-collapse: collapse; background: white; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid #e7e0d6; vertical-align: top; }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.8rem; }
+.connected { background: #d9f2df; }
+.unreachable { background: #f8d7d3; }
+.disabled { background: #eceae6; }
+.error { color: #9b2c2c; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.trace { font-family: ui-monospace, monospace; font-size: 0.85rem; background: #f3efe8; padding: 8px; }

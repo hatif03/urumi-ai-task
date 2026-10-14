@@ -1,0 +1,38 @@
+ingress:
+  shopHost: shop.example.com
+  dashboardHost: dashboard.example.com
+  tls:
+    enabled: false
+
+persistence:
+  storageClass: local-path
+  mariadb: 10Gi
+  wordpress: 10Gi
+  postgres: 10Gi
+  prometheus: 10Gi
+  tempo: 5Gi
+
+images:
+  gateway: { repository: ghcr.io/example/urumi-gateway, tag: local, pullPolicy: IfNotPresent }
+  dashboard: { repository: ghcr.io/example/urumi-dashboard, tag: local, pullPolicy: IfNotPresent }
+  woocommerceMcp: { repository: ghcr.io/example/urumi-woocommerce-mcp, tag: local, pullPolicy: IfNotPresent }
+  utilityMcp: { repository: ghcr.io/example/urumi-utility-mcp, tag: local, pullPolicy: IfNotPresent }
+  policyMcp: { repository: ghcr.io/example/urumi-policy-mcp, tag: local, pullPolicy: IfNotPresent }
+
+replicas:
+  gateway: 2
+  mcp: 2
+  dashboard: 2
+
+hpa:
+  cpu: 70
+  localMax: 2
+  prodMax: 4
+  useProdMax: true
+
+wordpress:
+  url: http://shop.example.com
+
+resources:
+  wordpress: { requests: { cpu: 200m, memory: 512Mi }, limits: { cpu: "2", memory: 1536Mi } }
+  gateway: { requests: { cpu: 200m, memory: 256Mi }, limits: { cpu: "1", memory: 1Gi } }

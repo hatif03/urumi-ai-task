@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "skills": {
+    "bun-hono-integration": {
+      "source": "secondsky/claude-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bun/skills/bun-hono-integration/SKILL.md",
+      "computedHash": "0b34ea32f368d6a93bdb80bfd0ac42ce33dc7d395227c22bb2f056a25215e1b0"
+    },
+    "kubernetes-helm": {
+      "source": "terminalskills/skills",
+      "sourceType": "github",
+      "skillPath": "skills/kubernetes-helm/SKILL.md",
+      "computedHash": "89b9fbadf34c4f23e9258b542c7665ce48f32d8555e812f3a4dc24fcef6d661c"
+    },
+    "vercel-react-best-practices": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/react-best-practices/SKILL.md",
+      "computedHash": "6b526d013e28073246a36f99b529bc43745d30832ecfa8217b359c34f260ca6b"
+    },
+    "wp-abilities-api": {
+      "source": "WordPress/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/wp-abilities-api/SKILL.md",
+      "computedHash": "e67c9c6ce89e60e7dfffd1119c53a10a3bd68f770989d762c699afda298399c9"
+    },
+    "wp-rest-api": {
+      "source": "WordPress/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/wp-rest-api/SKILL.md",
+      "computedHash": "a4283296f79ea973766954fcedee5e94f0fdd81d2994ceced65406a2ece331ac"
+    },
+    "wp-wpcli-and-ops": {
+      "source": "WordPress/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/wp-wpcli-and-ops/SKILL.md",
+      "computedHash": "13231a1c83a82eff74946569ab247a279dfbe32b5ab4a328eaad7ab238e0ba85"
+    }
+  }
+}

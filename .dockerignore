@@ -1,0 +1,6 @@
+node_modules
+dist
+.git
+deploy/secrets
+apps/dashboard/dist
+*.md

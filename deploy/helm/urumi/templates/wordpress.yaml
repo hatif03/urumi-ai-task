@@ -1,0 +1,84 @@
+{{- if not .Values.skeletonOnly }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wordpress
+  namespace: store
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: {{ .Values.persistence.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.wordpress }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress
+  namespace: store
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wordpress
+  template:
+    metadata:
+      labels:
+        app: wordpress
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: wordpress
+          image: "{{ .Values.images.wordpress.repository }}:{{ .Values.images.wordpress.tag }}"
+          imagePullPolicy: {{ .Values.images.wordpress.pullPolicy }}
+          ports:
+            - containerPort: 80
+          env:
+            - name: WORDPRESS_DB_HOST
+              value: mariadb
+            - name: WORDPRESS_DB_NAME
+              value: {{ .Values.wordpress.dbName | quote }}
+            - name: WORDPRESS_DB_USER
+              value: {{ .Values.wordpress.dbUser | quote }}
+            - name: WORDPRESS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.storeDb }}, key: password }
+            - name: WORDPRESS_CONFIG_EXTRA
+              value: |
+                define('WP_HOME', '{{ .Values.wordpress.url }}');
+                define('WP_SITEURL', '{{ .Values.wordpress.url }}');
+                if (isset($_SERVER['REQUEST_URI']) && str_contains($_SERVER['REQUEST_URI'], '/wp-json/wc/')) {
+                  $_SERVER['HTTPS'] = 'on';
+                }
+          resources: {{ toYaml .Values.resources.wordpress | nindent 12 }}
+          startupProbe:
+            httpGet: { path: /wp-includes/images/w-logo-blue-white-bg.png, port: 80 }
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /wp-login.php, port: 80 }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /wp-login.php, port: 80 }
+            periodSeconds: 10
+            failureThreshold: 6
+          volumeMounts:
+            - name: html
+              mountPath: /var/www/html
+      volumes:
+        - name: html
+          persistentVolumeClaim:
+            claimName: wordpress
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wordpress
+  namespace: store
+spec:
+  selector:
+    app: wordpress
+  ports:
+    - port: 80
+      targetPort: 80
+{{- end }}

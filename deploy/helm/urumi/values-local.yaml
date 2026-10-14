@@ -1,0 +1,38 @@
+ingress:
+  shopHost: shop.local
+  dashboardHost: dashboard.local
+  tls:
+    enabled: false
+
+persistence:
+  storageClass: local-path
+  mariadb: 5Gi
+  wordpress: 5Gi
+  postgres: 5Gi
+  prometheus: 2Gi
+  tempo: 1Gi
+
+images:
+  gateway: { repository: urumi-gateway, tag: local, pullPolicy: Never }
+  dashboard: { repository: urumi-dashboard, tag: local, pullPolicy: Never }
+  woocommerceMcp: { repository: urumi-woocommerce-mcp, tag: local, pullPolicy: Never }
+  utilityMcp: { repository: urumi-utility-mcp, tag: local, pullPolicy: Never }
+  policyMcp: { repository: urumi-policy-mcp, tag: local, pullPolicy: Never }
+
+replicas:
+  gateway: 2
+  mcp: 2
+  dashboard: 2
+
+hpa:
+  cpu: 70
+  localMax: 2
+  prodMax: 4
+  useProdMax: false
+
+wordpress:
+  url: http://shop.local
+
+resources:
+  wordpress: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: "1", memory: 768Mi } }
+  gateway: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 500m, memory: 512Mi } }

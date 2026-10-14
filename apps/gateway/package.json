@@ -1,0 +1,24 @@
+{
+  "name": "@urumi/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun src/index.ts",
+    "db:migrate": "bun src/migrate.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^2",
+    "@ai-sdk/google": "^2",
+    "@ai-sdk/openai": "^2",
+    "@modelcontextprotocol/client": "^2",
+    "@modelcontextprotocol/server": "^2",
+    "@urumi/mcp-http": "workspace:*",
+    "@urumi/mcp-names": "workspace:*",
+    "@urumi/obs": "workspace:*",
+    "ai": "^5",
+    "drizzle-orm": "^0.44.0",
+    "hono": "^4.10.0",
+    "zod": "^4.1.0"
+  }
+}

@@ -1,0 +1,56 @@
+{{- if not .Values.skeletonOnly }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  namespace: platform
+spec:
+  replicas: {{ .Values.replicas.dashboard }}
+  selector:
+    matchLabels:
+      app: dashboard
+  template:
+    metadata:
+      labels:
+        app: dashboard
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: dashboard
+          image: "{{ .Values.images.dashboard.repository }}:{{ .Values.images.dashboard.tag }}"
+          imagePullPolicy: {{ .Values.images.dashboard.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8080 }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+            readOnlyRootFilesystem: true
+          resources: {{ toYaml .Values.resources.dashboard | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /, port: http }
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            failureThreshold: 6
+          volumeMounts:
+            - { name: cache, mountPath: /var/cache/nginx }
+            - { name: run, mountPath: /tmp }
+      volumes:
+        - { name: cache, emptyDir: {} }
+        - { name: run, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  namespace: platform
+spec:
+  selector:
+    app: dashboard
+  ports:
+    - { name: http, port: 80, targetPort: http }
+{{- end }}

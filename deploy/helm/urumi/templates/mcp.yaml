@@ -1,0 +1,75 @@
+{{- if not .Values.skeletonOnly }}
+{{- $root := . }}
+{{- range $server := list
+  (dict "name" "woocommerce-mcp" "namespace" "store" "image" .Values.images.woocommerceMcp "service" "woocommerce")
+  (dict "name" "utility-mcp" "namespace" "platform" "image" .Values.images.utilityMcp "service" "utility")
+  (dict "name" "policy-mcp" "namespace" "platform" "image" .Values.images.policyMcp "service" "policy") }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $server.name }}
+  namespace: {{ $server.namespace }}
+spec:
+  replicas: {{ $root.Values.replicas.mcp }}
+  selector:
+    matchLabels:
+      app: {{ $server.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ $server.name }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: mcp
+          image: "{{ $server.image.repository }}:{{ $server.image.tag }}"
+          imagePullPolicy: {{ $server.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: metrics, containerPort: 9090 }
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: OTEL_SERVICE_NAME, value: {{ $server.name | quote }} }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector.platform.svc.cluster.local:4318 }
+            {{- if eq $server.name "woocommerce-mcp" }}
+            - { name: WC_BASE_URL, value: http://wordpress.store.svc.cluster.local }
+            - name: WC_CONSUMER_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ $root.Values.secrets.storeWcApi }}, key: consumer-key }
+            - name: WC_CONSUMER_SECRET
+              valueFrom:
+                secretKeyRef: { name: {{ $root.Values.secrets.storeWcApi }}, key: consumer-secret }
+            - { name: WC_TIMEOUT_MS, value: "5000" }
+            {{- end }}
+          securityContext:
+            {{- include "urumi.bunSecurity" $root | nindent 12 }}
+          resources: {{ toYaml $root.Values.resources.mcp | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            failureThreshold: 6
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $server.name }}
+  namespace: {{ $server.namespace }}
+spec:
+  selector:
+    app: {{ $server.name }}
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: metrics, port: 9090, targetPort: metrics }
+---
+{{- end }}
+{{- end }}

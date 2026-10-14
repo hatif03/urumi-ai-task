@@ -1,0 +1,75 @@
+{{- if not .Values.skeletonOnly }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mariadb
+  namespace: store
+spec:
+  serviceName: mariadb
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mariadb
+  template:
+    metadata:
+      labels:
+        app: mariadb
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: mariadb
+          image: "{{ .Values.images.mariadb.repository }}:{{ .Values.images.mariadb.tag }}"
+          imagePullPolicy: {{ .Values.images.mariadb.pullPolicy }}
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MARIADB_DATABASE
+              value: {{ .Values.wordpress.dbName | quote }}
+            - name: MARIADB_USER
+              value: {{ .Values.wordpress.dbUser | quote }}
+            - name: MARIADB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.storeDb }}, key: password }
+            - name: MARIADB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.storeDb }}, key: root-password }
+          resources: {{ toYaml .Values.resources.mariadb | nindent 12 }}
+          startupProbe:
+            exec:
+              command: ["sh", "-c", "mariadb-admin ping -uroot -p\"$MARIADB_ROOT_PASSWORD\" --silent"]
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "mariadb-admin ping -uroot -p\"$MARIADB_ROOT_PASSWORD\" --silent"]
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "mariadb-admin ping -uroot -p\"$MARIADB_ROOT_PASSWORD\" --silent"]
+            periodSeconds: 10
+            failureThreshold: 6
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.persistence.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.mariadb }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb
+  namespace: store
+spec:
+  selector:
+    app: mariadb
+  ports:
+    - port: 3306
+      targetPort: 3306
+{{- end }}

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+apps/dashboard/dist/
+deploy/secrets/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+coverage/

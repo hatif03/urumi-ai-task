@@ -1,0 +1,351 @@
+{{- if not .Values.skeletonOnly }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: platform
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      - job_name: urumi
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [store, platform]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_ip, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            regex: (.+);(.+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: urumi-prometheus
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: urumi-prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: urumi-prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: platform
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      serviceAccountName: prometheus
+      containers:
+        - name: prometheus
+          image: "{{ .Values.images.prometheus.repository }}:{{ .Values.images.prometheus.tag }}"
+          args: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=6h", "--storage.tsdb.path=/data"]
+          ports:
+            - { containerPort: 9090 }
+          resources: {{ toYaml .Values.resources.prometheus | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /-/ready, port: 9090 }
+          livenessProbe:
+            httpGet: { path: /-/healthy, port: 9090 }
+          volumeMounts:
+            - { name: config, mountPath: /etc/prometheus }
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: config
+          configMap: { name: prometheus-config }
+        - name: data
+          persistentVolumeClaim: { claimName: prometheus }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus
+  namespace: platform
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: {{ .Values.persistence.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.prometheus }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: platform
+spec:
+  selector:
+    app: prometheus
+  ports:
+    - { port: 9090, targetPort: 9090 }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: platform
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+      - name: Tempo
+        type: tempo
+        access: proxy
+        url: http://tempo:3200
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard
+  namespace: platform
+data:
+  gateway.json: |
+{{ .Files.Get "files/gateway-dashboard.json" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: "{{ .Values.images.grafana.repository }}:{{ .Values.images.grafana.tag }}"
+          ports:
+            - { containerPort: 3000 }
+          env:
+            - { name: GF_AUTH_ANONYMOUS_ENABLED, value: "true" }
+            - { name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer }
+            - { name: GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH, value: /var/lib/grafana/dashboards/gateway.json }
+          resources: {{ toYaml .Values.resources.grafana | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /api/health, port: 3000 }
+          livenessProbe:
+            httpGet: { path: /api/health, port: 3000 }
+          volumeMounts:
+            - { name: datasources, mountPath: /etc/grafana/provisioning/datasources }
+            - { name: dashboards, mountPath: /var/lib/grafana/dashboards }
+            - { name: provider, mountPath: /etc/grafana/provisioning/dashboards }
+      volumes:
+        - name: datasources
+          configMap: { name: grafana-datasources }
+        - name: dashboards
+          configMap: { name: grafana-dashboard }
+        - name: provider
+          configMap: { name: grafana-provider }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-provider
+  namespace: platform
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: urumi
+        type: file
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: platform
+spec:
+  selector:
+    app: grafana
+  ports:
+    - { port: 3000, targetPort: 3000 }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo-config
+  namespace: platform
+data:
+  tempo.yaml: |
+    server:
+      http_listen_port: 3200
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+    storage:
+      trace:
+        backend: local
+        local:
+          path: /var/tempo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempo
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tempo
+  template:
+    metadata:
+      labels:
+        app: tempo
+    spec:
+      containers:
+        - name: tempo
+          image: "{{ .Values.images.tempo.repository }}:{{ .Values.images.tempo.tag }}"
+          args: ["-config.file=/etc/tempo/tempo.yaml"]
+          ports:
+            - { containerPort: 3200 }
+            - { containerPort: 4317 }
+          resources: {{ toYaml .Values.resources.tempo | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /ready, port: 3200 }
+          volumeMounts:
+            - { name: config, mountPath: /etc/tempo }
+            - { name: data, mountPath: /var/tempo }
+      volumes:
+        - name: config
+          configMap: { name: tempo-config }
+        - name: data
+          persistentVolumeClaim: { claimName: tempo }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tempo
+  namespace: platform
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: {{ .Values.persistence.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.tempo }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo
+  namespace: platform
+spec:
+  selector:
+    app: tempo
+  ports:
+    - { name: http, port: 3200, targetPort: 3200 }
+    - { name: otlp, port: 4317, targetPort: 4317 }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector
+  namespace: platform
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+    exporters:
+      otlp:
+        endpoint: tempo.platform.svc.cluster.local:4317
+        tls:
+          insecure: true
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          exporters: [otlp]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+        - name: collector
+          image: "{{ .Values.images.collector.repository }}:{{ .Values.images.collector.tag }}"
+          args: ["--config=/etc/otel/config.yaml"]
+          ports:
+            - { containerPort: 4318 }
+          resources: {{ toYaml .Values.resources.collector | nindent 12 }}
+          readinessProbe:
+            tcpSocket: { port: 4318 }
+          volumeMounts:
+            - { name: config, mountPath: /etc/otel }
+      volumes:
+        - name: config
+          configMap: { name: otel-collector }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: platform
+spec:
+  selector:
+    app: otel-collector
+  ports:
+    - { port: 4318, targetPort: 4318 }
+{{- end }}

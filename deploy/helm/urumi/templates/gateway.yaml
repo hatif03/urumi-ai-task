@@ -1,0 +1,108 @@
+{{- if not .Values.skeletonOnly }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: platform
+spec:
+  replicas: {{ .Values.replicas.gateway }}
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      terminationGracePeriodSeconds: 20
+      initContainers:
+        - name: migrate
+          image: "{{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag }}"
+          imagePullPolicy: {{ .Values.images.gateway.pullPolicy }}
+          command: ["bun", "apps/gateway/src/migrate.ts"]
+          env: &gatewayEnv
+            - name: HOME
+              value: /tmp
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.gatewaySecrets }}, key: database-url }
+            - name: ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.gatewayBootstrap }}, key: username }
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.gatewayBootstrap }}, key: password }
+            - name: SEED_MCP_SERVERS
+              value: {{ .Values.seedServers | quote }}
+          securityContext:
+            {{- include "urumi.bunSecurity" . | nindent 12 }}
+          resources: {{ toYaml .Values.resources.gateway | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      containers:
+        - name: gateway
+          image: "{{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag }}"
+          imagePullPolicy: {{ .Values.images.gateway.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: metrics, containerPort: 9090 }
+          env:
+            - name: HOME
+              value: /tmp
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.gatewaySecrets }}, key: database-url }
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.gatewaySecrets }}, key: session-secret }
+            - name: CREDENTIAL_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.gatewaySecrets }}, key: credential-key }
+            - name: COOKIE_SECURE
+              value: {{ .Values.ingress.tls.enabled | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: gateway
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.platform.svc.cluster.local:4318
+            - name: LLM_PROVIDER
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.gatewayLlm }}, key: provider, optional: true }
+            - name: LLM_MODEL
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.gatewayLlm }}, key: model, optional: true }
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.gatewayLlm }}, key: api-key, optional: true }
+          securityContext:
+            {{- include "urumi.bunSecurity" . | nindent 12 }}
+          resources: {{ toYaml .Values.resources.gateway | nindent 12 }}
+          startupProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            failureThreshold: 6
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: platform
+spec:
+  selector:
+    app: gateway
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: metrics, port: 9090, targetPort: metrics }
+{{- end }}

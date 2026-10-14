@@ -1,0 +1,12 @@
+{
+  "name": "@urumi/woocommerce-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "bun src/index.ts" },
+  "dependencies": {
+    "@urumi/mcp-http": "workspace:*",
+    "@urumi/obs": "workspace:*",
+    "zod": "^4.1.0"
+  }
+}

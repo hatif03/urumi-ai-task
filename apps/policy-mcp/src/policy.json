@@ -1,0 +1,9 @@
+{
+  "returnWindowDays": 30,
+  "conditions": "Unopened items can be returned within 30 days of delivery. Opened items can be returned within 14 days if they are unused.",
+  "shipping": [
+    { "country": "*", "name": "Standard", "price": "5.00", "days": "5-7" },
+    { "country": "*", "name": "Express", "price": "15.00", "days": "2-3" },
+    { "country": "US", "name": "Overnight", "price": "25.00", "days": "1" }
+  ]
+}
