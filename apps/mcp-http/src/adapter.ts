@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { McpServer, WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
 import type { ZodType } from "zod";
-import { log, metrics, observeDuration, traceFromHeaders } from "@urumi/obs";
+import { childSpan, log, metrics, observeDuration, traceFromHeaders } from "@urumi/obs";
 
 export const ACCEPTED_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18"] as const;
 const PAGE_SIZE = 50;
@@ -12,9 +12,12 @@ export type ToolResult = {
   isError?: boolean;
 };
 
+export type ToolAnnotations = { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean; title?: string };
+
 export type ToolDefinition = {
   name: string;
   description: string;
+  annotations?: ToolAnnotations;
   inputSchema?: ZodType;
   jsonSchema?: Record<string, unknown>;
   handler: (args: Record<string, unknown>) => Promise<ToolResult>;
@@ -25,7 +28,7 @@ export type McpAppOptions = {
   version: string;
   tools: (request: Request, message: { method?: string; params?: Record<string, unknown> }) => ToolDefinition[] | Promise<ToolDefinition[]>;
   ready?: () => Promise<boolean>;
-  authorize?: (request: Request, message: { method?: string; id?: string | number | null }) => Promise<Response | null>;
+  authorize?: (request: Request, message: { method?: string; id?: string | number | null; params?: Record<string, unknown> }) => Promise<Response | null>;
 };
 
 type JsonRpc = {
@@ -48,6 +51,7 @@ function toolPage(tools: ToolDefinition[], cursor: unknown): { tools: unknown[];
       name: tool.name,
       description: tool.description,
       inputSchema: tool.jsonSchema ?? tool.inputSchema?.toJSONSchema() ?? { type: "object", properties: {} },
+      ...(tool.annotations ? { annotations: tool.annotations } : {}),
     })),
     ...(next ? { nextCursor: next } : {}),
   };
@@ -127,7 +131,7 @@ export function createMcpApp(options: McpAppOptions): Hono {
 
       const started = performance.now();
       try {
-        const result = await tool.handler((rpc.params?.arguments ?? {}) as Record<string, unknown>);
+        const result = await childSpan(trace, `mcp.tool ${name}`, { server: options.name, tool: name }, () => tool.handler((rpc.params?.arguments ?? {}) as Record<string, unknown>));
         const outcome = result.isError ? "error" : "success";
         metrics.inc("tool_calls_total", { server: options.name, tool: name, outcome });
         observeDuration("tool_call_duration_seconds", { server: options.name, tool: name }, started);
@@ -135,11 +139,12 @@ export function createMcpApp(options: McpAppOptions): Hono {
         return jsonResult(rpc.id, result, trace.traceparent);
       } catch (error) {
         const code = error instanceof Error && "code" in error ? String((error as { code?: string }).code) : "internal_error";
+        const rpcCode = Number((error as { rpcCode?: number }).rpcCode) || -32000;
         const outcome = code === "upstream_timeout" ? "timeout" : code === "upstream_unreachable" ? "unreachable" : "error";
         metrics.inc("tool_calls_total", { server: options.name, tool: name, outcome });
         observeDuration("tool_call_duration_seconds", { server: options.name, tool: name }, started);
         log("error", "tool call failed", { server: options.name, tool: name, outcome, traceId: trace.traceId });
-        return rpcError(rpc.id, -32000, error instanceof Error ? error.message : "tool failed", { code });
+        return rpcError(rpc.id, rpcCode, error instanceof Error ? error.message : "tool failed", { code });
       }
     }
 

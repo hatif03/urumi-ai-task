@@ -8,6 +8,7 @@ const app = createMcpApp({
   tools: () => [
     {
       name: "get_return_policy",
+      annotations: { readOnlyHint: true },
       description: "Return the store return window and conditions.",
       inputSchema: z.object({}),
       handler: async () => {
@@ -17,6 +18,7 @@ const app = createMcpApp({
     },
     {
       name: "list_shipping_options",
+      annotations: { readOnlyHint: true },
       description: "List static shipping options. Pass a country code to include country-specific options.",
       inputSchema: z.object({ country: z.string().optional() }),
       handler: async (args) => {

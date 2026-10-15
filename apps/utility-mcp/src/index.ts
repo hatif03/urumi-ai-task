@@ -7,6 +7,7 @@ const app = createMcpApp({
   tools: () => [
     {
       name: "get_current_time",
+      annotations: { readOnlyHint: true },
       description: "Return the current time as an ISO timestamp. Pass an IANA timezone, or omit it for UTC.",
       inputSchema: z.object({ timezone: z.string().optional() }),
       handler: async (args) => {
@@ -23,6 +24,7 @@ const app = createMcpApp({
     },
     {
       name: "echo",
+      annotations: { readOnlyHint: true },
       description: "Return the message unchanged.",
       inputSchema: z.object({ message: z.string() }),
       handler: async (args) => {

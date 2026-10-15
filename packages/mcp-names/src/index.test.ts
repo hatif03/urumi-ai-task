@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { joinToolName, splitToolName } from "./index.ts";
+import { isSlug, joinToolName, splitToolName } from "./index.ts";
 
 describe("mcp names", () => {
   test("joins and splits a public tool name", () => {
@@ -19,5 +19,10 @@ describe("mcp names", () => {
     expect(splitToolName("__list_orders")).toBeNull();
     expect(splitToolName("list_orders")).toBeNull();
     expect(() => joinToolName("Bad", "echo")).toThrow();
+  });
+
+  test("slugs cannot make the separator ambiguous", () => {
+    for (const bad of ["a_", "ab__c", "_ab", "ab_", "a", "x".repeat(33)]) expect(isSlug(bad)).toBe(false);
+    for (const good of ["woocommerce", "store_alpha", "s2_a1"]) expect(isSlug(good)).toBe(true);
   });
 });

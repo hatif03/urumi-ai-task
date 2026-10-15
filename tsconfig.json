@@ -8,10 +8,10 @@
     "noEmit": true,
     "types": ["bun"],
     "jsx": "react-jsx",
-    "allowImportingTsExtensions": false,
+    "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": false,
     "resolveJsonModule": true,
     "isolatedModules": true
   },
-  "exclude": ["node_modules", "apps/dashboard", "deploy"]
+  "exclude": ["node_modules", "apps/dashboard", "deploy", "scripts/gateway-smoke.ts"]
 }

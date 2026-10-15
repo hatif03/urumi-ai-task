@@ -1,4 +1,4 @@
-FROM oven/bun:1.2.19-alpine AS build
+FROM oven/bun:1.4.3-alpine AS build
 WORKDIR /app
 COPY package.json bun.lock bunfig.toml tsconfig.json ./
 COPY packages ./packages
@@ -7,6 +7,7 @@ COPY apps/gateway/package.json ./apps/gateway/package.json
 COPY apps/woocommerce-mcp/package.json ./apps/woocommerce-mcp/package.json
 COPY apps/utility-mcp/package.json ./apps/utility-mcp/package.json
 COPY apps/policy-mcp/package.json ./apps/policy-mcp/package.json
+COPY apps/provisioner/package.json ./apps/provisioner/package.json
 COPY apps/dashboard ./apps/dashboard
 RUN bun install --frozen-lockfile
 WORKDIR /app/apps/dashboard

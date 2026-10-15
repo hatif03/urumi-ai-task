@@ -1,7 +1,9 @@
-const SLUG = /^[a-z][a-z0-9_]{1,31}$/;
+// Lowercase words joined by single underscores. No "__" and no trailing "_", so
+// "{slug}__{tool}" always splits at the first "__".
+const SLUG = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 
 export function isSlug(value: string): boolean {
-  return SLUG.test(value);
+  return value.length >= 2 && value.length <= 32 && SLUG.test(value);
 }
 
 export function joinToolName(slug: string, tool: string): string {

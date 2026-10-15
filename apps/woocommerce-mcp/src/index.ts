@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createMcpApp, listen, type ToolResult } from "@urumi/mcp-http";
-import { log, traceFromHeaders } from "@urumi/obs";
+import { childSpan, currentTrace, log } from "@urumi/obs";
 
 const base = process.env.WC_BASE_URL ?? "http://wordpress.store.svc.cluster.local";
 const key = process.env.WC_CONSUMER_KEY ?? "";
@@ -12,7 +12,13 @@ let timezoneFetchedAt = 0;
 
 type WcError = Error & { status?: number; code?: string };
 
-async function wc(path: string, init: RequestInit = {}, traceparent?: string): Promise<unknown> {
+async function wc(path: string, init: RequestInit = {}): Promise<unknown> {
+  const parent = currentTrace();
+  return parent ? childSpan(parent, "woocommerce.http", { path: path.split("?")[0]! }, () => wcRequest(path, init)) : wcRequest(path, init);
+}
+
+async function wcRequest(path: string, init: RequestInit): Promise<unknown> {
+  const traceparent = currentTrace()?.traceparent;
   const started = performance.now();
   const headers = new Headers(init.headers);
   headers.set("authorization", `Basic ${btoa(`${key}:${secret}`)}`);
@@ -90,22 +96,33 @@ async function mapWc<T>(fn: () => Promise<T>): Promise<ToolResult> {
   }
 }
 
+let storeHealthy = false;
+let storeCheckedAt = 0;
+async function checkStore(): Promise<void> {
+  try {
+    await wc("/wp-json/wc/v3/products?per_page=1");
+    storeHealthy = true;
+  } catch {
+    storeHealthy = false;
+  }
+  storeCheckedAt = Date.now();
+}
+setInterval(checkStore, 10_000);
+void checkStore();
+
 const app = createMcpApp({
   name: "woocommerce",
   version: "0.1.0",
-  ready: async () => {
-    try {
-      await wc("/wp-json/wc/v3/products?per_page=1");
-      return true;
-    } catch {
-      return false;
-    }
-  },
+  // Readiness reflects the store, but is answered from a check that runs in the background: a probe must
+  // return in milliseconds even when WordPress takes a couple of seconds, or Kubernetes marks the pod
+  // NotReady and the gateway loses the server for a slow page, not a dead one.
+  ready: async () => storeHealthy && Date.now() - storeCheckedAt < 45_000,
   tools: async () => {
     const zone = await timezone();
     return [
       {
         name: "list_products",
+        annotations: { readOnlyHint: true },
         description: "List published and other WooCommerce products. Returns id, name, sku, price, status, permalink, and stock status.",
         inputSchema: z.object({
           search: z.string().optional(),
@@ -123,6 +140,7 @@ const app = createMcpApp({
       },
       {
         name: "create_product",
+        annotations: { readOnlyHint: false, destructiveHint: false },
         description: "Create a published simple product. regular_price is a decimal string such as \"21.99\".",
         inputSchema: z.object({
           name: z.string().min(1),
@@ -139,6 +157,7 @@ const app = createMcpApp({
       },
       {
         name: "list_orders",
+        annotations: { readOnlyHint: true },
         description: `List WooCommerce orders. The store timezone is ${zone}. For "today", set after to the start of the current day in that timezone and before to the end of that day. Default statuses include pending, processing, on-hold, and completed so a cash-on-delivery order is visible.`,
         inputSchema: z.object({
           after: z.string().optional(),
@@ -161,12 +180,14 @@ const app = createMcpApp({
       },
       {
         name: "get_order",
+        annotations: { readOnlyHint: true },
         description: "Get one WooCommerce order by id.",
         inputSchema: z.object({ id: z.number().int() }),
         handler: (args) => mapWc(async () => slimOrder(await wc(`/wp-json/wc/v3/orders/${args.id}`) as Record<string, unknown>)),
       },
       {
         name: "update_order_status",
+        annotations: { readOnlyHint: false, destructiveHint: true },
         description: "Set an order status.",
         inputSchema: z.object({
           id: z.number().int(),
@@ -182,5 +203,4 @@ const app = createMcpApp({
 });
 
 process.env.OTEL_SERVICE_NAME ??= "woocommerce-mcp";
-void traceFromHeaders;
 listen(app);
