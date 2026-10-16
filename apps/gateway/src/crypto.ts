@@ -24,8 +24,8 @@ function bytesToBase64Url(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64url");
 }
 
-function base64ToBytes(value: string): Uint8Array {
-  return new Uint8Array(Buffer.from(value, "base64"));
+function base64ToBytes(value: string): Uint8Array<ArrayBuffer> {
+  return Uint8Array.from(Buffer.from(value, "base64"));
 }
 
 export function createApiToken(): { token: string; prefix: string } {
@@ -53,7 +53,19 @@ export async function encryptSecret(plaintext: string, keyB64: string): Promise<
   });
 }
 
-export async function decryptSecret(payload: string, keyB64: string): Promise<string> {
+// Rotation: set CREDENTIAL_KEY to the new key and CREDENTIAL_KEY_PREVIOUS to the old one, deploy, run
+// `bun apps/gateway/src/rekey.ts` to re-encrypt every stored credential, then remove the old key. AES-GCM
+// authenticates, so decrypting with the wrong key fails loudly instead of returning garbage.
+export async function decryptSecret(payload: string, keyB64: string, previousKeyB64?: string): Promise<string> {
+  try {
+    return await decryptWith(payload, keyB64);
+  } catch (error) {
+    if (!previousKeyB64) throw error;
+    return decryptWith(payload, previousKeyB64);
+  }
+}
+
+async function decryptWith(payload: string, keyB64: string): Promise<string> {
   const parsed = JSON.parse(payload) as { iv: string; tag: string; ciphertext: string };
   const key = await aesKey(keyB64);
   const iv = base64ToBytes(parsed.iv);
@@ -84,7 +96,7 @@ export async function readSession(token: string, secret: string): Promise<Sessio
   return payload;
 }
 
-async function hmac(value: string, secret: string): Promise<string> {
+export async function hmac(value: string, secret: string): Promise<string> {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
   return Buffer.from(signature).toString("base64url");

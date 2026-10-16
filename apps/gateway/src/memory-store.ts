@@ -1,4 +1,6 @@
-import type { ApiKey, AuditFilter, AuditRow, CachedTool, McpServerRow, ServerStatus, User } from "./types.ts";
+import type { OAuthClient, OAuthCode, OAuthGrantView, OAuthToken } from "./types.ts";
+import type { ApiKey, AuditFilter, AuditRow, AuditView, CachedTool, McpServerRow, ServerStatus, User } from "./types.ts";
+import type { Grant } from "./policy.ts";
 import type { NewServer, Store } from "./store.ts";
 
 function now(): string {
@@ -39,9 +41,23 @@ export class MemoryStore implements Store {
     return user;
   }
 
-  async disableUser(userId: string): Promise<void> {
+  async setUserDisabled(userId: string, disabled: boolean): Promise<void> {
     const user = await this.getUser(userId);
-    if (user) user.disabledAt = now();
+    if (user) user.disabledAt = disabled ? now() : null;
+  }
+
+  async setUserRole(userId: string, role: User["role"]): Promise<void> {
+    const user = await this.getUser(userId);
+    if (user) user.role = role;
+  }
+
+  async setUserPassword(userId: string, passwordHash: string): Promise<void> {
+    const user = await this.getUser(userId);
+    if (user) user.passwordHash = passwordHash;
+  }
+
+  async countActiveAdmins(): Promise<number> {
+    return this.users.filter((user) => user.role === "admin" && !user.disabledAt).length;
   }
 
   async insertApiKey(input: { userId: string; prefix: string; keyHash: string; label: string }): Promise<ApiKey> {
@@ -52,6 +68,10 @@ export class MemoryStore implements Store {
 
   async listApiKeys(userId: string): Promise<ApiKey[]> {
     return this.keys.filter((key) => key.userId === userId);
+  }
+
+  async listAllApiKeys(): Promise<Array<ApiKey & { username: string }>> {
+    return this.keys.map((key) => ({ ...key, username: this.users.find((user) => user.id === key.userId)?.username ?? "" }));
   }
 
   async findLiveKeyByPrefix(prefix: string): Promise<ApiKey | null> {
@@ -92,6 +112,7 @@ export class MemoryStore implements Store {
       credentialType: input.credentialType ?? "none",
       credentialHeaderName: input.credentialHeaderName ?? null,
       credentialCiphertext: input.credentialCiphertext ?? null,
+      managedBy: input.managedBy ?? null,
       status: input.enabled === false ? "disabled" : "connected",
       statusDetail: "",
       lastCheckedAt: null,
@@ -171,26 +192,111 @@ export class MemoryStore implements Store {
     return row;
   }
 
-  async listAudit(filter: AuditFilter): Promise<AuditRow[]> {
+  async listAudit(filter: AuditFilter): Promise<AuditView[]> {
     return this.audits
       .filter((row) => !filter.userId || row.userId === filter.userId)
       .filter((row) => !filter.serverSlug || row.serverSlug === filter.serverSlug)
+      .filter((row) => !filter.toolName || row.toolName === filter.toolName)
       .filter((row) => !filter.outcome || row.outcome === filter.outcome)
       .filter((row) => !filter.from || row.at >= filter.from)
       .filter((row) => !filter.to || row.at <= filter.to)
-      .sort((a, b) => b.at.localeCompare(a.at))
-      .slice(0, filter.limit ?? 100);
+      .filter((row) => !filter.beforeId || row.id < filter.beforeId)
+      .sort((a, b) => b.id - a.id)
+      .slice(0, Math.min(filter.limit ?? 100, 500))
+      .map((row) => ({ ...row, username: this.users.find((user) => user.id === row.userId)?.username ?? null }));
   }
 
-  async consumeToken(apiKeyId: string, perMinute: number): Promise<boolean> {
-    const current = this.buckets.get(apiKeyId) ?? { tokens: perMinute, updatedAt: Date.now() };
+  oauthClients: OAuthClient[] = [];
+  oauthCodes: OAuthCode[] = [];
+  oauthTokens: OAuthToken[] = [];
+
+  async upsertOAuthClient(client: Omit<OAuthClient, "createdAt">): Promise<void> {
+    const existing = this.oauthClients.find((c) => c.clientId === client.clientId);
+    if (existing) Object.assign(existing, { name: client.name, redirectUris: client.redirectUris });
+    else this.oauthClients.push({ ...client, createdAt: now() });
+  }
+
+  async getOAuthClient(clientId: string): Promise<OAuthClient | null> {
+    return this.oauthClients.find((c) => c.clientId === clientId) ?? null;
+  }
+
+  async insertOAuthCode(code: Omit<OAuthCode, "usedAt">): Promise<void> {
+    this.oauthCodes.push({ ...code, usedAt: null });
+  }
+
+  async consumeOAuthCode(codeHash: string) {
+    const code = this.oauthCodes.find((c) => c.codeHash === codeHash);
+    if (!code) return { status: "invalid" } as const;
+    if (code.usedAt) return { status: "replayed", familyId: code.familyId } as const;
+    if (Date.parse(code.expiresAt) < Date.now()) return { status: "invalid" } as const;
+    code.usedAt = now();
+    return { status: "ok", code } as const;
+  }
+
+  async insertOAuthToken(token: Omit<OAuthToken, "revokedAt" | "createdAt" | "lastUsedAt">): Promise<OAuthToken> {
+    const row: OAuthToken = { ...token, revokedAt: null, createdAt: now(), lastUsedAt: null };
+    this.oauthTokens.push(row);
+    return row;
+  }
+
+  async findOAuthToken(tokenHash: string): Promise<OAuthToken | null> {
+    return this.oauthTokens.find((t) => t.tokenHash === tokenHash) ?? null;
+  }
+
+  async revokeOAuthToken(tokenId: string): Promise<boolean> {
+    const token = this.oauthTokens.find((t) => t.id === tokenId);
+    if (!token || token.revokedAt) return false;
+    token.revokedAt = now();
+    return true;
+  }
+
+  async revokeOAuthFamily(familyId: string): Promise<void> {
+    for (const token of this.oauthTokens) if (token.familyId === familyId && !token.revokedAt) token.revokedAt = now();
+  }
+
+  async touchOAuthToken(tokenId: string): Promise<void> {
+    const token = this.oauthTokens.find((t) => t.id === tokenId);
+    if (token) token.lastUsedAt = now();
+  }
+
+  async listOAuthGrants(userId: string): Promise<OAuthGrantView[]> {
+    return this.oauthTokens
+      .filter((t) => t.userId === userId && t.kind === "refresh" && !t.revokedAt && Date.parse(t.expiresAt) > Date.now())
+      .map((t) => ({ familyId: t.familyId, clientId: t.clientId, clientName: this.oauthClients.find((c) => c.clientId === t.clientId)?.name ?? t.clientId, createdAt: t.createdAt, lastUsedAt: t.lastUsedAt }));
+  }
+
+  grants: Grant[] = [];
+
+  async listGrants(): Promise<Grant[]> {
+    return [...this.grants];
+  }
+
+  async upsertGrant(input: Omit<Grant, "id"> & { createdBy: string | null }): Promise<Grant> {
+    const existing = this.grants.find((g) => g.subjectType === input.subjectType && g.subject === input.subject && g.serverSlug === input.serverSlug && g.toolName === input.toolName);
+    if (existing) {
+      existing.effect = input.effect;
+      return existing;
+    }
+    const grant: Grant = { id: id(), subjectType: input.subjectType, subject: input.subject, serverSlug: input.serverSlug, toolName: input.toolName, effect: input.effect };
+    this.grants.push(grant);
+    return grant;
+  }
+
+  async deleteGrant(grantId: string): Promise<boolean> {
+    const before = this.grants.length;
+    this.grants = this.grants.filter((g) => g.id !== grantId);
+    return this.grants.length < before;
+  }
+
+  async consumeToken(key: string, perMinute: number): Promise<boolean> {
+    const current = this.buckets.get(key) ?? { tokens: perMinute, updatedAt: Date.now() };
     const elapsed = (Date.now() - current.updatedAt) / 1000;
     const refilled = Math.min(perMinute, current.tokens + elapsed * (perMinute / 60));
     if (refilled < 1) {
-      this.buckets.set(apiKeyId, { tokens: refilled, updatedAt: Date.now() });
+      this.buckets.set(key, { tokens: refilled, updatedAt: Date.now() });
       return false;
     }
-    this.buckets.set(apiKeyId, { tokens: refilled - 1, updatedAt: Date.now() });
+    this.buckets.set(key, { tokens: refilled - 1, updatedAt: Date.now() });
     return true;
   }
 }
