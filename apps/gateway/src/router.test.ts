@@ -1,55 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { z } from "zod";
-import { createMcpApp } from "@urumi/mcp-http";
-import { createGatewayApp, type GatewayEnv } from "./app.ts";
-import { encryptSecret, hashPassword, sha256Hex } from "./crypto.ts";
-import { MemoryStore } from "./memory-store.ts";
-import { ToolRouter } from "./router.ts";
-import { createApiToken } from "./crypto.ts";
-
-const credentialKey = Buffer.alloc(32, 9).toString("base64");
-const env: GatewayEnv = { sessionSecret: "session-secret-session-secret", credentialKey, cookieSecure: false, allowlist: ["127.0.0.1"] };
-
-async function listenUpstream(name: string, delayMs = 0) {
-  const seen: string[] = [];
-  const mcp = createMcpApp({
-    name,
-    version: "0.0.1",
-    tools: () => [{
-      name: "echo",
-      description: "echo",
-      inputSchema: z.object({ message: z.string() }),
-      handler: async (args) => ({ content: [{ type: "text", text: String(args.message) }], structuredContent: { message: args.message } }),
-    }],
-  });
-  const server = Bun.serve({
-    port: 0,
-    async fetch(req) {
-      seen.push(req.headers.get("authorization") ?? "");
-      if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
-      return mcp.fetch(req);
-    },
-  });
-  return { server, seen, url: `http://127.0.0.1:${server.port}/mcp` };
-}
-
-async function gatewayFor(servers: Array<{ slug: string; url: string; bearer?: string }>) {
-  const store = new MemoryStore();
-  const user = await store.insertUser({ username: "ada", passwordHash: await hashPassword("password-1"), role: "admin" });
-  const token = createApiToken();
-  await store.insertApiKey({ userId: user.id, prefix: token.prefix, keyHash: await sha256Hex(token.token), label: "ada" });
-  for (const server of servers) {
-    await store.insertServer({
-      slug: server.slug,
-      displayName: server.slug,
-      url: server.url,
-      credentialType: server.bearer ? "bearer" : "none",
-      credentialCiphertext: server.bearer ? await encryptSecret(server.bearer, credentialKey) : null,
-    });
-  }
-  const router = new ToolRouter(store, { credentialKey, allowlist: env.allowlist, rateLimitPerMinute: 60 });
-  return { app: createGatewayApp(store, router, env), store, token: token.token };
-}
+import { gatewayFor, listenUpstream, mcpHeaders, rpc } from "./testkit.ts";
 
 describe("gateway", () => {
   test("lists the healthy server when another upstream sleeps past 3s", async () => {

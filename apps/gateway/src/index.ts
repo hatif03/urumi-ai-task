@@ -14,14 +14,22 @@ const store = createPostgresStore(databaseUrl);
 const allowlist = (process.env.UPSTREAM_ALLOWLIST ?? "").split(",").map((item) => item.trim()).filter(Boolean);
 const router = new ToolRouter(store, {
   credentialKey,
+  credentialKeyPrevious: process.env.CREDENTIAL_KEY_PREVIOUS || undefined,
   allowlist,
   rateLimitPerMinute: Number(process.env.RATE_LIMIT_PER_MINUTE ?? 60),
+  maxResultBytes: Number(process.env.MAX_RESULT_BYTES ?? 1_000_000),
+  maxInflight: Number(process.env.MAX_INFLIGHT_CALLS ?? 24),
 });
 const app = createGatewayApp(store, router, {
   sessionSecret,
   credentialKey,
   cookieSecure: process.env.COOKIE_SECURE === "true",
   allowlist,
+  allowedOrigins: (process.env.ALLOWED_ORIGINS ?? "").split(",").map((item) => item.trim()).filter(Boolean),
+  internalToken: process.env.INTERNAL_TOKEN,
+  publicBaseUrl: process.env.PUBLIC_BASE_URL,
+  provisionerUrl: process.env.PROVISIONER_URL,
+  provisionerToken: process.env.PROVISIONER_TOKEN,
 });
 
 process.env.OTEL_SERVICE_NAME ??= "gateway";
