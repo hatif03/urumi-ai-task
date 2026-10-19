@@ -1,0 +1,4 @@
+Store "{{ .Values.store.name }}" ({{ .Values.store.slug }}) is installed in namespace {{ .Release.Namespace }}.
+
+Storefront: {{ .Values.store.url }}
+MCP URL (cluster-internal, gateway only): http://woocommerce-mcp.{{ .Release.Namespace }}.svc.cluster.local:8080/mcp

@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mariadb
+  labels: {{ include "store.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: {{ .Values.persistence.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.mariadb }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mariadb
+  labels: {{ include "store.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # ReadWriteOnce volume, one writer: the old pod must release it first
+  selector:
+    matchLabels:
+      app: mariadb
+  template:
+    metadata:
+      labels:
+        app: mariadb
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: mariadb
+          image: "{{ .Values.images.mariadb.repository }}:{{ .Values.images.mariadb.tag }}"
+          imagePullPolicy: {{ .Values.images.mariadb.pullPolicy }}
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MARIADB_DATABASE
+              value: {{ .Values.wordpress.dbName | quote }}
+            - name: MARIADB_USER
+              value: {{ .Values.wordpress.dbUser | quote }}
+            - name: MARIADB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: store-db, key: password }
+            - name: MARIADB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: store-db, key: root-password }
+          resources: {{ toYaml .Values.resources.mariadb | nindent 12 }}
+          startupProbe:
+            exec:
+              command: ["sh", "-c", "mariadb-admin ping -uroot -p\"$MARIADB_ROOT_PASSWORD\" --silent"]
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "mariadb-admin ping -uroot -p\"$MARIADB_ROOT_PASSWORD\" --silent"]
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "mariadb-admin ping -uroot -p\"$MARIADB_ROOT_PASSWORD\" --silent"]
+            periodSeconds: 10
+            failureThreshold: 6
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mariadb
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb
+  labels: {{ include "store.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: mariadb
+  ports:
+    - port: 3306
+      targetPort: 3306

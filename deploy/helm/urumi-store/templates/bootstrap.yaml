@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: store-bootstrap
+  labels: {{ include "store.labels" . | nindent 4 }}
+data:
+  bootstrap.sh: |
+{{ .Files.Get "files/bootstrap.sh" | indent 4 }}
+  setup.php: |
+{{ .Files.Get "files/setup.php" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: store-bootstrap
+  labels: {{ include "store.labels" . | nindent 4 }}
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: store-bootstrap
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: "{{ .Values.images.wordpressCli.repository }}:{{ .Values.images.wordpressCli.tag }}"
+          imagePullPolicy: {{ .Values.images.wordpressCli.pullPolicy }}
+          command: ["sh", "/bootstrap/bootstrap.sh"]
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          env:
+            - name: WORDPRESS_DB_HOST
+              value: mariadb
+            - name: WORDPRESS_DB_NAME
+              value: {{ .Values.wordpress.dbName | quote }}
+            - name: WORDPRESS_DB_USER
+              value: {{ .Values.wordpress.dbUser | quote }}
+            - name: WORDPRESS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: store-db, key: password }
+            - name: WP_URL
+              value: {{ .Values.store.url | quote }}
+            - name: STORE_NAME
+              value: {{ .Values.store.name | quote }}
+            - name: WP_ADMIN_USER
+              valueFrom:
+                secretKeyRef: { name: store-admin, key: username }
+            - name: WP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: store-admin, key: password }
+            - name: WP_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef: { name: store-admin, key: email }
+            - name: WC_CONSUMER_KEY
+              valueFrom:
+                secretKeyRef: { name: store-wc-api, key: consumer-key }
+            - name: WC_CONSUMER_SECRET
+              valueFrom:
+                secretKeyRef: { name: store-wc-api, key: consumer-secret }
+          resources: {{ toYaml .Values.resources.bootstrap | nindent 12 }}
+          volumeMounts:
+            - name: html
+              mountPath: /var/www/html
+            - name: bootstrap
+              mountPath: /bootstrap
+      volumes:
+        - name: html
+          persistentVolumeClaim:
+            claimName: wordpress
+        - name: bootstrap
+          configMap:
+            name: store-bootstrap
+            defaultMode: 0555

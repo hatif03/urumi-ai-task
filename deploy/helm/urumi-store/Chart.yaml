@@ -1,0 +1,6 @@
+apiVersion: v2
+name: urumi-store
+description: One WooCommerce store (WordPress, MariaDB, MCP server) in its own namespace
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

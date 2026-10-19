@@ -1,0 +1,12 @@
+{
+  "name": "@urumi/provisioner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "bun src/index.ts" },
+  "dependencies": {
+    "@urumi/mcp-names": "workspace:*",
+    "@urumi/obs": "workspace:*",
+    "hono": "^4.10.0"
+  }
+}

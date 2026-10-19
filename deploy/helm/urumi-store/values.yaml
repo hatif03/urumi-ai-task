@@ -1,0 +1,56 @@
+# One release per store, installed by the provisioner:
+#   helm upgrade --install store-<slug> deploy/helm/urumi-store -n store-<slug> --set store.slug=...
+# The namespace and the Secrets store-db, store-admin and store-wc-api exist before install.
+
+store:
+  slug: demo
+  name: Demo
+  host: demo.shop.localhost
+  url: http://demo.shop.localhost
+
+ingress:
+  className: nginx
+  tls:
+    enabled: false
+    secretName: ""
+    clusterIssuer: ""
+
+persistence:
+  storageClass: local-path
+  mariadb: 2Gi
+  wordpress: 2Gi
+
+images:
+  mariadb: { repository: mariadb, tag: "11.4", pullPolicy: IfNotPresent }
+  wordpress: { repository: wordpress, tag: "7.1.3-apache", pullPolicy: IfNotPresent }
+  wordpressCli: { repository: wordpress, tag: "cli-2.12.0-php8.3", pullPolicy: IfNotPresent }
+  woocommerceMcp: { repository: urumi-woocommerce-mcp, tag: local, pullPolicy: Never }
+
+# Sized so three stores fit on a laptop and so the sum of limits across mariadb, wordpress,
+# bootstrap and mcp (1.8 CPU, 1472Mi) stays under the namespace quota (2 CPU, 2Gi).
+resources:
+  mariadb: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: 400m, memory: 384Mi } }
+  wordpress: { requests: { cpu: 50m, memory: 192Mi }, limits: { cpu: 800m, memory: 512Mi } }
+  bootstrap: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: 400m, memory: 384Mi } }
+  mcp: { requests: { cpu: 25m, memory: 48Mi }, limits: { cpu: 200m, memory: 192Mi } }
+
+quota:
+  pods: 10
+  requestsCpu: "1"
+  requestsMemory: 1Gi
+  limitsCpu: "2"
+  limitsMemory: 2Gi
+  pvcs: 3
+  storage: 6Gi
+
+limitRange:
+  defaultRequest: { cpu: 50m, memory: 128Mi }
+  default: { cpu: 500m, memory: 512Mi }
+
+wordpress:
+  dbName: wordpress
+  dbUser: wordpress
+
+platform:
+  namespace: platform
+  otelEndpoint: http://otel-collector.platform.svc.cluster.local:4318

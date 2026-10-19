@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: woocommerce-mcp
+  labels: {{ include "store.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # no surge pod: the quota is sized for one of each workload
+  selector:
+    matchLabels:
+      app: woocommerce-mcp
+  template:
+    metadata:
+      labels:
+        app: woocommerce-mcp
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: mcp
+          image: "{{ .Values.images.woocommerceMcp.repository }}:{{ .Values.images.woocommerceMcp.tag }}"
+          imagePullPolicy: {{ .Values.images.woocommerceMcp.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: metrics, containerPort: 9090 }
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: OTEL_SERVICE_NAME, value: {{ printf "woocommerce-mcp-%s" .Values.store.slug | quote }} }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: {{ .Values.platform.otelEndpoint | quote }} }
+            - { name: WC_BASE_URL, value: {{ printf "http://wordpress.%s.svc.cluster.local" .Release.Namespace | quote }} }
+            - name: WC_CONSUMER_KEY
+              valueFrom:
+                secretKeyRef: { name: store-wc-api, key: consumer-key }
+            - name: WC_CONSUMER_SECRET
+              valueFrom:
+                secretKeyRef: { name: store-wc-api, key: consumer-secret }
+            - { name: WC_TIMEOUT_MS, value: "5000" }
+          securityContext:
+            {{- include "store.bunSecurity" . | nindent 12 }}
+          resources: {{ toYaml .Values.resources.mcp | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            timeoutSeconds: 3
+            failureThreshold: 6
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: woocommerce-mcp
+  labels: {{ include "store.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: woocommerce-mcp
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: metrics, port: 9090, targetPort: metrics }
