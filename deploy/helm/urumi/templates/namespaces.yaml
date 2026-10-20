@@ -1,9 +1,14 @@
+# Pod Security Admission: baseline is enforced everywhere (no privileged pods, no host namespaces, no
+# hostPath) and the restricted profile is reported as a warning so drift is visible at install time.
+# mcp-hosted runs images an admin chose, so it enforces restricted.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: store
   labels:
     kubernetes.io/metadata.name: store
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
 ---
 apiVersion: v1
 kind: Namespace
@@ -11,3 +16,42 @@ metadata:
   name: platform
   labels:
     kubernetes.io/metadata.name: platform
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+{{- if and (not .Values.skeletonOnly) .Values.provisioner.enabled }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mcp-hosted
+  labels:
+    kubernetes.io/metadata.name: mcp-hosted
+    urumi.io/hosted-namespace: "true"
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: hosted-quota
+  namespace: mcp-hosted
+spec:
+  hard:
+    pods: {{ .Values.provisioner.hostedQuotaPods | quote }}
+    requests.cpu: "2"
+    requests.memory: 2Gi
+    limits.cpu: "4"
+    limits.memory: 4Gi
+    secrets: "40"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: hosted-limits
+  namespace: mcp-hosted
+spec:
+  limits:
+    - type: Container
+      defaultRequest: { cpu: 50m, memory: 64Mi }
+      default: { cpu: 250m, memory: 128Mi }
+{{- end }}

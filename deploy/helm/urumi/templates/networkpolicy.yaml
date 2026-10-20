@@ -72,6 +72,12 @@ spec:
         - podSelector:
             matchLabels:
               app: woocommerce-mcp
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: platform
+          podSelector:
+            matchLabels:
+              app: urumi-test
       ports:
         - { protocol: TCP, port: 80 }
 ---
@@ -204,6 +210,12 @@ spec:
               app: prometheus
       ports:
         - { protocol: TCP, port: 9090 }
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app, operator: In, values: [provisioner, urumi-test] }
+      ports:
+        - { protocol: TCP, port: 8080 }
   egress:
     - to:
         - podSelector:
@@ -211,6 +223,41 @@ spec:
               app: postgres
       ports:
         - { protocol: TCP, port: 5432 }
+    # The gateway reaches the public internet (the LLM API, MCP servers an admin adds by URL, OAuth client
+    # metadata) but never a private range. This is the network-layer half of the SSRF defence: the code
+    # check in ssrf.ts can be fooled by a DNS race, this cannot. In-cluster MCP servers are allowed by the
+    # explicit rules around it.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 127.0.0.0/8]
+      ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 80 }
+    {{- if .Values.provisioner.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app: provisioner
+      ports:
+        - { protocol: TCP, port: 8080 }
+    # Stores created by the provisioner (namespaces labelled urumi.io/managed) and hosted MCP servers.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              urumi.io/managed: "true"
+          podSelector:
+            matchLabels:
+              app: woocommerce-mcp
+      ports:
+        - { protocol: TCP, port: 8080 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              urumi.io/hosted-namespace: "true"
+      ports:
+        - { protocol: TCP, port: 1024, endPort: 65535 }
+    {{- end }}
     - to:
         - podSelector:
             matchLabels:
@@ -278,8 +325,10 @@ spec:
   ingress:
     - from:
         - podSelector:
-            matchLabels:
-              app: gateway
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [gateway, provisioner]
       ports:
         - { protocol: TCP, port: 5432 }
 ---
@@ -298,6 +347,9 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: ingress-nginx
+        - podSelector:
+            matchLabels:
+              app: urumi-test
       ports:
         - { protocol: TCP, port: 8080 }
 ---
@@ -327,6 +379,12 @@ spec:
               kubernetes.io/metadata.name: store
       ports:
         - { protocol: TCP, port: 4318 }
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              urumi.io/managed: "true"
+      ports:
+        - { protocol: TCP, port: 4318 }
   egress:
     - to:
         - podSelector: {}
@@ -341,4 +399,68 @@ spec:
               kubernetes.io/metadata.name: store
       ports:
         - { protocol: TCP, port: 9090 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              urumi.io/managed: "true"
+      ports:
+        - { protocol: TCP, port: 9090 }
+{{- end }}
+
+{{- if and (not .Values.skeletonOnly) .Values.provisioner.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: provisioner
+  namespace: platform
+spec:
+  podSelector:
+    matchLabels:
+      app: provisioner
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app, operator: In, values: [gateway, urumi-test] }
+      ports:
+        - { protocol: TCP, port: 8080 }
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - { protocol: TCP, port: 9090 }
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - { protocol: TCP, port: 5432 }
+    - to:
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - { protocol: TCP, port: 8080 }
+    # The Kubernetes API server. Its address is the node IP on 6443 (k3s) or a cloud endpoint on 443, so the
+    # destination cannot be named by label; the port is what is pinned. RBAC and the admission policy are the
+    # real limits on what the provisioner may do there.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - { protocol: TCP, port: 6443 }
+        - { protocol: TCP, port: 443 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: mcp-hosted
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
 {{- end }}

@@ -1,0 +1,50 @@
+{{- if and .Values.certManager.enabled (not .Values.skeletonOnly) }}
+{{- /* cert-manager itself is installed separately (see docs/vps-deploy.md); this only declares who may sign. */}}
+{{- if .Values.certManager.selfSigned }}
+# Rehearsal issuer: a private CA created in-cluster. Browsers will not trust it; curl -k and MCP clients that
+# accept a custom CA will. Use it to prove the TLS path on k3d before pointing at Let's Encrypt.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.certManager.issuerName }}-bootstrap
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: urumi-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: urumi-local-ca
+  secretName: urumi-ca
+  privateKey: { algorithm: ECDSA, size: 256 }
+  issuerRef:
+    name: {{ .Values.certManager.issuerName }}-bootstrap
+    kind: ClusterIssuer
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.certManager.issuerName }}
+spec:
+  ca:
+    secretName: urumi-ca
+{{- else }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.certManager.issuerName }}
+spec:
+  acme:
+    server: {{ .Values.certManager.acmeServer }}
+    email: {{ required "certManager.acmeEmail is required for Let's Encrypt" .Values.certManager.acmeEmail }}
+    privateKeySecretRef:
+      name: {{ .Values.certManager.issuerName }}-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: {{ .Values.ingress.className }}
+{{- end }}
+{{- end }}

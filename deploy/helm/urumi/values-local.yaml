@@ -14,6 +14,7 @@ persistence:
 
 images:
   gateway: { repository: urumi-gateway, tag: local, pullPolicy: Never }
+  provisioner: { repository: urumi-provisioner, tag: local, pullPolicy: Never }
   dashboard: { repository: urumi-dashboard, tag: local, pullPolicy: Never }
   woocommerceMcp: { repository: urumi-woocommerce-mcp, tag: local, pullPolicy: Never }
   utilityMcp: { repository: urumi-utility-mcp, tag: local, pullPolicy: Never }
@@ -32,6 +33,14 @@ hpa:
 
 wordpress:
   url: http://shop.local
+
+publicBaseUrl: http://dashboard.local
+
+provisioner:
+  storesDomain: shop.localhost
+  storesScheme: http
+  hostedPullPolicy: Never
+  hostedRegistries: "urumi-,ghcr.io/"
 
 resources:
   wordpress: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: "1", memory: 768Mi } }

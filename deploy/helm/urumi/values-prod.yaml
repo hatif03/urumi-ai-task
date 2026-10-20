@@ -2,7 +2,16 @@ ingress:
   shopHost: shop.example.com
   dashboardHost: dashboard.example.com
   tls:
-    enabled: false
+    enabled: true
+    secretName: urumi-tls
+    clusterIssuer: letsencrypt
+
+certManager:
+  enabled: true
+  issuerName: letsencrypt
+  acmeEmail: ops@example.com
+
+publicBaseUrl: https://dashboard.example.com
 
 persistence:
   storageClass: local-path
@@ -14,6 +23,7 @@ persistence:
 
 images:
   gateway: { repository: ghcr.io/example/urumi-gateway, tag: local, pullPolicy: IfNotPresent }
+  provisioner: { repository: ghcr.io/example/urumi-provisioner, tag: local, pullPolicy: IfNotPresent }
   dashboard: { repository: ghcr.io/example/urumi-dashboard, tag: local, pullPolicy: IfNotPresent }
   woocommerceMcp: { repository: ghcr.io/example/urumi-woocommerce-mcp, tag: local, pullPolicy: IfNotPresent }
   utilityMcp: { repository: ghcr.io/example/urumi-utility-mcp, tag: local, pullPolicy: IfNotPresent }
@@ -31,7 +41,14 @@ hpa:
   useProdMax: true
 
 wordpress:
-  url: http://shop.example.com
+  url: https://shop.example.com
+
+provisioner:
+  replicas: 2
+  storesDomain: stores.example.com
+  storesScheme: https
+  hostedPullPolicy: IfNotPresent
+  hostedRegistries: "ghcr.io/example/"
 
 resources:
   wordpress: { requests: { cpu: 200m, memory: 512Mi }, limits: { cpu: "2", memory: 1536Mi } }

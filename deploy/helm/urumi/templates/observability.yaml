@@ -5,15 +5,58 @@ metadata:
   name: prometheus-config
   namespace: platform
 data:
+  rules.yml: |
+    groups:
+      - name: urumi
+        rules:
+          - alert: UpstreamDown
+            expr: upstream_up == 0
+            for: 1m
+            labels: { severity: page }
+            annotations:
+              summary: "MCP server {{ "{{ $labels.server }}" }} is unreachable from the gateway"
+              runbook: "Dashboard > Servers shows the reason (dns, connection refused, timeout, tls, credential). Audit rows for this server carry a trace id."
+          - alert: ToolErrorRatioHigh
+            expr: |
+              sum by (server) (rate(tool_calls_total{outcome=~"error|timeout|unreachable"}[5m]))
+                / clamp_min(sum by (server) (rate(tool_calls_total[5m])), 0.001) > 0.2
+            for: 5m
+            labels: { severity: warn }
+            annotations:
+              summary: "More than 20% of tool calls to {{ "{{ $labels.server }}" }} fail"
+          - alert: GatewayToolLatencyP95High
+            expr: histogram_quantile(0.95, sum by (le, server) (rate(tool_call_duration_seconds_bucket[5m]))) > 3
+            for: 5m
+            labels: { severity: warn }
+            annotations:
+              summary: "p95 tool latency for {{ "{{ $labels.server }}" }} is above 3 seconds"
+          - alert: RateLimitRejections
+            expr: sum(rate(rate_limit_rejected_total[5m])) > 0.2
+            for: 10m
+            labels: { severity: info }
+            annotations:
+              summary: "Callers are being rate limited; raise gateway.ratePerMinute or find the noisy key"
+          - alert: StoreProvisioningFailed
+            expr: stores_by_status{status="failed"} > 0
+            for: 1m
+            labels: { severity: warn }
+            annotations:
+              summary: "A store failed to provision; the reason is on the Stores page"
+          - alert: StoreProvisioningStuck
+            expr: stores_by_status{status=~"provisioning|deleting"} > 0
+            for: 20m
+            labels: { severity: warn }
+            annotations:
+              summary: "A store has been provisioning or deleting for 20 minutes, past the provisioning timeout"
   prometheus.yml: |
+    rule_files:
+      - /etc/prometheus/rules.yml
     global:
       scrape_interval: 15s
     scrape_configs:
       - job_name: urumi
         kubernetes_sd_configs:
           - role: pod
-            namespaces:
-              names: [store, platform]
         relabel_configs:
           - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
             action: keep
@@ -165,10 +208,19 @@ spec:
             - { name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer }
             - { name: GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH, value: /var/lib/grafana/dashboards/gateway.json }
           resources: {{ toYaml .Values.resources.grafana | nindent 12 }}
+          # Grafana runs ~200 database migrations on every start (its sqlite file is not persisted), which takes
+          # longer than the default liveness window on a busy laptop; the startup probe gives it two minutes.
+          startupProbe:
+            httpGet: { path: /api/health, port: 3000 }
+            periodSeconds: 5
+            failureThreshold: 36
           readinessProbe:
             httpGet: { path: /api/health, port: 3000 }
+            timeoutSeconds: 5
           livenessProbe:
             httpGet: { path: /api/health, port: 3000 }
+            timeoutSeconds: 5
+            failureThreshold: 6
           volumeMounts:
             - { name: datasources, mountPath: /etc/grafana/provisioning/datasources }
             - { name: dashboards, mountPath: /var/lib/grafana/dashboards }

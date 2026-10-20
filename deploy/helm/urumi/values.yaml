@@ -6,7 +6,51 @@ ingress:
   dashboardHost: dashboard.local
   tls:
     enabled: false
-    secretName: ""
+    # Secret that holds the certificate. With certManager.enabled it is created for you.
+    secretName: urumi-tls
+    # Name of the cert-manager ClusterIssuer used for the dashboard, the shop and every new store.
+    clusterIssuer: ""
+
+# https://cert-manager.io must already be installed when this is on. selfSigned issues a local CA
+# certificate (good for a rehearsal on k3d); otherwise Let's Encrypt HTTP-01 through ingress-nginx.
+certManager:
+  enabled: false
+  issuerName: urumi-issuer
+  selfSigned: false
+  acmeEmail: ""
+  acmeServer: https://acme-v02.api.letsencrypt.org/directory
+
+# Absolute URL users type for the dashboard, used for the OAuth issuer and resource identifiers.
+# Empty means "derive from the request's Host and X-Forwarded-* headers".
+publicBaseUrl: ""
+allowedOrigins: ""
+
+gateway:
+  chatDirectToolLimit: 20
+  maxResultBytes: 1000000
+  maxInflightCalls: 24
+  ratePerMinute: 60
+  llmBaseUrl: ""
+
+tests:
+  enabled: true
+
+provisioner:
+  enabled: true
+  replicas: 1
+  concurrency: 3
+  maxStoresPerUser: 3
+  provisionTimeoutSeconds: 600
+  # New stores are served at <slug>.<storesDomain>. *.localhost resolves to 127.0.0.1 in browsers and curl.
+  storesDomain: shop.localhost
+  storesScheme: http
+  # Image references allowed for hosted MCP servers: prefixes, comma separated.
+  hostedRegistries: "urumi-,ghcr.io/"
+  hostedPullPolicy: IfNotPresent
+  hostedQuotaPods: 10
+  # Merged over the values the chart derives for each store release / hosted release.
+  storeValues: {}
+  hostedValues: {}
 
 persistence:
   storageClass: local-path
@@ -22,6 +66,7 @@ images:
   wordpressCli: { repository: wordpress, tag: "cli-2.12.0-php8.3", pullPolicy: IfNotPresent }
   postgres: { repository: postgres, tag: "16-alpine", pullPolicy: IfNotPresent }
   gateway: { repository: urumi-gateway, tag: local, pullPolicy: Never }
+  provisioner: { repository: urumi-provisioner, tag: local, pullPolicy: Never }
   dashboard: { repository: urumi-dashboard, tag: local, pullPolicy: Never }
   woocommerceMcp: { repository: urumi-woocommerce-mcp, tag: local, pullPolicy: Never }
   utilityMcp: { repository: urumi-utility-mcp, tag: local, pullPolicy: Never }
@@ -64,6 +109,7 @@ resources:
   bootstrap: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: 500m, memory: 512Mi } }
   postgres: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: 500m, memory: 512Mi } }
   gateway: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 500m, memory: 512Mi } }
+  provisioner: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: 500m, memory: 384Mi } }
   mcp: { requests: { cpu: 50m, memory: 64Mi }, limits: { cpu: 300m, memory: 256Mi } }
   dashboard: { requests: { cpu: 25m, memory: 32Mi }, limits: { cpu: 200m, memory: 128Mi } }
   prometheus: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: 300m, memory: 512Mi } }

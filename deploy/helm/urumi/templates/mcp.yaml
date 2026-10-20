@@ -10,7 +10,11 @@ metadata:
   name: {{ $server.name }}
   namespace: {{ $server.namespace }}
 spec:
-  replicas: {{ $root.Values.replicas.mcp }}
+  # no replicas: here. The HorizontalPodAutoscaler owns the count (minReplicas is values replicas.*); a value in the
+  # Deployment would be reset by every upgrade and conflicts with the autoscaler's field ownership.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
   selector:
     matchLabels:
       app: {{ $server.name }}
@@ -50,8 +54,10 @@ spec:
           readinessProbe:
             httpGet: { path: /readyz, port: http }
             periodSeconds: 10
+            timeoutSeconds: 3
           livenessProbe:
             httpGet: { path: /healthz, port: http }
+            timeoutSeconds: 3
             failureThreshold: 6
           volumeMounts:
             - { name: tmp, mountPath: /tmp }

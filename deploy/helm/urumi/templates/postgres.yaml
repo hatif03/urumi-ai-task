@@ -3,6 +3,9 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: postgres
+  annotations:
+    # helm uninstall must not delete the store's content or the platform database
+    helm.sh/resource-policy: keep
   namespace: platform
 spec:
   accessModes: ["ReadWriteOnce"]

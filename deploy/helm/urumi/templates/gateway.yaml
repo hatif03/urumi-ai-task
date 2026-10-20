@@ -5,7 +5,11 @@ metadata:
   name: gateway
   namespace: platform
 spec:
-  replicas: {{ .Values.replicas.gateway }}
+  # no replicas: here. The HorizontalPodAutoscaler owns the count (minReplicas is values replicas.*); a value in the
+  # Deployment would be reset by every upgrade and conflicts with the autoscaler's field ownership.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
   selector:
     matchLabels:
       app: gateway
@@ -63,6 +67,33 @@ spec:
                 secretKeyRef: { name: {{ .Values.secrets.gatewaySecrets }}, key: credential-key }
             - name: COOKIE_SECURE
               value: {{ .Values.ingress.tls.enabled | quote }}
+            - name: PUBLIC_BASE_URL
+              value: {{ .Values.publicBaseUrl | quote }}
+            - name: ALLOWED_ORIGINS
+              value: {{ .Values.allowedOrigins | quote }}
+            - name: RATE_LIMIT_PER_MINUTE
+              value: {{ .Values.gateway.ratePerMinute | quote }}
+            - name: CHAT_DIRECT_TOOL_LIMIT
+              value: {{ .Values.gateway.chatDirectToolLimit | quote }}
+            - name: LLM_BASE_URL
+              value: {{ .Values.gateway.llmBaseUrl | quote }}
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.gatewaySecrets }}, key: internal-token }
+            - name: CREDENTIAL_KEY_PREVIOUS
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.gatewaySecrets }}, key: credential-key-previous, optional: true }
+            - name: MAX_RESULT_BYTES
+              value: {{ .Values.gateway.maxResultBytes | quote }}
+            - name: MAX_INFLIGHT_CALLS
+              value: {{ .Values.gateway.maxInflightCalls | quote }}
+            {{- if .Values.provisioner.enabled }}
+            - name: PROVISIONER_URL
+              value: http://provisioner.platform.svc.cluster.local:8080
+            - name: PROVISIONER_TOKEN
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.gatewaySecrets }}, key: provisioner-token }
+            {{- end }}
             - name: OTEL_SERVICE_NAME
               value: gateway
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -85,8 +116,10 @@ spec:
             failureThreshold: 30
           readinessProbe:
             httpGet: { path: /readyz, port: http }
+            timeoutSeconds: 3
           livenessProbe:
             httpGet: { path: /healthz, port: http }
+            timeoutSeconds: 3
             failureThreshold: 6
           volumeMounts:
             - { name: tmp, mountPath: /tmp }

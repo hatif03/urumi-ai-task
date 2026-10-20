@@ -1,0 +1,93 @@
+{{- if and (not .Values.skeletonOnly) .Values.tests.enabled }}
+# helm test urumi -n platform
+# Proves the release answers: gateway, OAuth discovery, an unauthenticated MCP call is refused with the right
+# challenge, the dashboard, the storefront, and the provisioner. It needs no credentials.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: urumi-smoke
+  namespace: platform
+  labels:
+    app: urumi-test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  containers:
+    - name: smoke
+      image: "{{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag }}"
+      imagePullPolicy: {{ .Values.images.gateway.pullPolicy }}
+      securityContext:
+        {{- include "urumi.bunSecurity" . | nindent 8 }}
+      resources:
+        requests: { cpu: 25m, memory: 64Mi }
+        limits: { cpu: 200m, memory: 128Mi }
+      command:
+        - bun
+        - -e
+        - |
+          const checks = [];
+          const lastError = {};
+          // A new pod's NetworkPolicy rules are programmed a moment after it starts, so each check retries.
+          const get = async (name, url, ok) => {
+            for (let attempt = 0; attempt < 6; attempt++) {
+              if (await once(name, url, ok)) return;
+              await new Promise((r) => setTimeout(r, 2000));
+            }
+          };
+          const once = async (name, url, ok) => {
+            try {
+              const r = await fetch(url, { method: url.includes("/mcp") ? "POST" : "GET", headers: { "content-type": "application/json" }, body: url.includes("/mcp") ? JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) : undefined, signal: AbortSignal.timeout(8000) });
+              const text = await r.text();
+              const good = await ok(r, text);
+              if (good) checks.push([name, true]);
+              return good;
+            } catch (e) { lastError[name] = String(e); return false; }
+          };
+          await get("gateway ready", "http://gateway.platform.svc.cluster.local:8080/readyz", (r) => r.status === 200);
+          await get("mcp refuses an anonymous call with a resource_metadata challenge", "http://gateway.platform.svc.cluster.local:8080/mcp", (r) => r.status === 401 && (r.headers.get("www-authenticate") ?? "").includes("resource_metadata"));
+          await get("oauth discovery", "http://gateway.platform.svc.cluster.local:8080/.well-known/oauth-authorization-server", (r, t) => r.status === 200 && JSON.parse(t).code_challenge_methods_supported?.[0] === "S256");
+          await get("dashboard", "http://dashboard.platform.svc.cluster.local/", (r) => r.status === 200);
+          await get("storefront", "http://wordpress.store.svc.cluster.local/", (r) => r.status === 200);
+          {{- if .Values.provisioner.enabled }}
+          await get("provisioner ready", "http://provisioner.platform.svc.cluster.local:8080/readyz", (r) => r.status === 200);
+          {{- end }}
+          const names = ["gateway ready", "mcp refuses an anonymous call with a resource_metadata challenge", "oauth discovery", "dashboard", "storefront"{{- if .Values.provisioner.enabled }}, "provisioner ready"{{- end }}];
+          for (const name of names) console.log(checks.some(([n]) => n === name) ? "PASS" : "FAIL", name, lastError[name] ?? "");
+          process.exit(names.every((n) => checks.some(([c]) => c === n)) ? 0 : 1);
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: urumi-test
+  namespace: platform
+spec:
+  podSelector:
+    matchLabels:
+      app: urumi-test
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - { key: app, operator: In, values: [gateway, provisioner] }
+      ports:
+        - { protocol: TCP, port: 8080 }
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dashboard
+      ports:
+        - { protocol: TCP, port: 8080 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: store
+          podSelector:
+            matchLabels:
+              app: wordpress
+      ports:
+        - { protocol: TCP, port: 80 }
+{{- end }}

@@ -1,0 +1,198 @@
+{{- if and (not .Values.skeletonOnly) .Values.provisioner.enabled }}
+{{- /*
+  The provisioner is the only workload with Kubernetes API rights. Three layers keep those rights narrow:
+  1. urumi-provisioner (cluster scope): create/get/delete namespaces, create RoleBindings, bind exactly one
+     ClusterRole, and read PersistentVolumes. It cannot read or write Secrets, Pods or anything else cluster-wide.
+  2. urumi-store-admin: what the provisioner may do INSIDE a store namespace. The provisioner receives it per
+     namespace through a RoleBinding it creates after it creates the namespace, never cluster-wide.
+  3. A ValidatingAdmissionPolicy that refuses a RoleBinding from the provisioner unless the namespace carries
+     urumi.io/managed=true. The provisioner cannot patch namespaces, so it cannot label kube-system to get around that.
+*/}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: provisioner
+  namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: urumi-provisioner
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get, create, delete]
+  - apiGroups: [""]
+    resources: [persistentvolumes]
+    verbs: [get, list]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [rolebindings]
+    verbs: [create]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterroles]
+    verbs: [bind]
+    resourceNames: [urumi-store-admin]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: urumi-provisioner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: urumi-provisioner
+subjects:
+  - kind: ServiceAccount
+    name: provisioner
+    namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: urumi-store-admin
+rules:
+  - apiGroups: [""]
+    resources: [services, configmaps, secrets, persistentvolumeclaims, resourcequotas, limitranges]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [pods, events]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets, statefulsets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+{{- /* mcp-hosted is created by this chart, so the binding there is static rather than created at runtime. */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: urumi-provisioner
+  namespace: mcp-hosted
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: urumi-store-admin
+subjects:
+  - kind: ServiceAccount
+    name: provisioner
+    namespace: platform
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: urumi-provisioner-bindings
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [rbac.authorization.k8s.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [rolebindings]
+  matchConditions:
+    - name: from-the-provisioner
+      expression: "request.userInfo.username == 'system:serviceaccount:platform:provisioner'"
+  validations:
+    - expression: "has(namespaceObject.metadata.labels) && 'urumi.io/managed' in namespaceObject.metadata.labels && namespaceObject.metadata.labels['urumi.io/managed'] == 'true'"
+      message: "the provisioner may only bind roles in namespaces labelled urumi.io/managed=true"
+    - expression: "object.roleRef.kind == 'ClusterRole' && object.roleRef.name == 'urumi-store-admin'"
+      message: "the provisioner may only grant urumi-store-admin"
+    - expression: "object.subjects.size() == 1 && object.subjects[0].kind == 'ServiceAccount' && object.subjects[0].name == 'provisioner' && object.subjects[0].namespace == 'platform'"
+      message: "the provisioner may only bind itself"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: urumi-provisioner-bindings
+spec:
+  policyName: urumi-provisioner-bindings
+  validationActions: [Deny]
+---
+{{- $img := .Values.images }}
+{{- $store := dict
+  "ingress" (dict "className" .Values.ingress.className "tls" (dict "enabled" .Values.ingress.tls.enabled "clusterIssuer" .Values.ingress.tls.clusterIssuer))
+  "persistence" (dict "storageClass" .Values.persistence.storageClass)
+  "images" (dict "mariadb" $img.mariadb "wordpress" $img.wordpress "wordpressCli" $img.wordpressCli "woocommerceMcp" $img.woocommerceMcp) }}
+{{- $storeValues := mustMergeOverwrite $store .Values.provisioner.storeValues }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provisioner
+  namespace: platform
+spec:
+  replicas: {{ .Values.provisioner.replicas }}
+  selector:
+    matchLabels:
+      app: provisioner
+  template:
+    metadata:
+      labels:
+        app: provisioner
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: provisioner
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: provisioner
+          image: "{{ $img.provisioner.repository }}:{{ $img.provisioner.tag }}"
+          imagePullPolicy: {{ $img.provisioner.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: metrics, containerPort: 9090 }
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: POD_NAMESPACE, valueFrom: { fieldRef: { fieldPath: metadata.namespace } } }
+            - { name: PROVISIONER_SERVICE_ACCOUNT, value: provisioner }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.gatewaySecrets }}, key: database-url }
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.gatewaySecrets }}, key: internal-token }
+            - name: PROVISIONER_TOKEN
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secrets.gatewaySecrets }}, key: provisioner-token }
+            - { name: GATEWAY_URL, value: "http://gateway.platform.svc.cluster.local:8080" }
+            - { name: STORES_DOMAIN, value: {{ .Values.provisioner.storesDomain | quote }} }
+            - { name: STORES_SCHEME, value: {{ .Values.provisioner.storesScheme | quote }} }
+            - { name: MAX_STORES_PER_USER, value: {{ .Values.provisioner.maxStoresPerUser | quote }} }
+            - { name: PROVISION_TIMEOUT_SECONDS, value: {{ .Values.provisioner.provisionTimeoutSeconds | quote }} }
+            - { name: PROVISION_CONCURRENCY, value: {{ .Values.provisioner.concurrency | quote }} }
+            - { name: HOSTED_REGISTRIES, value: {{ .Values.provisioner.hostedRegistries | quote }} }
+            - { name: HOSTED_PULL_POLICY, value: {{ .Values.provisioner.hostedPullPolicy | quote }} }
+            - { name: STORE_VALUES, value: {{ $storeValues | toJson | quote }} }
+            - { name: HOSTED_VALUES, value: {{ .Values.provisioner.hostedValues | toJson | quote }} }
+            - { name: OTEL_SERVICE_NAME, value: provisioner }
+          securityContext:
+            {{- include "urumi.bunSecurity" . | nindent 12 }}
+          resources: {{ toYaml .Values.resources.provisioner | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            failureThreshold: 6
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: provisioner
+  namespace: platform
+spec:
+  selector:
+    app: provisioner
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: metrics, port: 9090, targetPort: metrics }
+{{- end }}
