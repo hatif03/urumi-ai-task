@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.server.name }}
+  labels:
+    app: {{ .Values.server.name }}
+    urumi.io/hosted: {{ .Values.server.slug | quote }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.server.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.server.name }}
+        urumi.io/hosted: {{ .Values.server.slug | quote }}
+    spec:
+      # An admin-supplied image gets no Kubernetes API access and no service-account token.
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mcp
+          image: {{ .Values.server.image | quote }}
+          imagePullPolicy: {{ .Values.server.pullPolicy }}
+          ports:
+            - { name: http, containerPort: {{ .Values.server.port }} }
+          env:
+            - { name: PORT, value: {{ .Values.server.port | quote }} }
+            - { name: HOME, value: /tmp }
+            - { name: OTEL_SERVICE_NAME, value: {{ .Values.server.name | quote }} }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: {{ .Values.platform.otelEndpoint | quote }} }
+            {{- range $key, $value := .Values.server.env }}
+            - { name: {{ $key }}, value: {{ $value | quote }} }
+            {{- end }}
+          {{- if .Values.server.secretName }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.server.secretName }}
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources: {{ toYaml .Values.server.resources | nindent 12 }}
+          startupProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 3
+            failureThreshold: 40
+          readinessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 20
+            failureThreshold: 6
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.server.name }}
+  labels:
+    urumi.io/hosted: {{ .Values.server.slug | quote }}
+spec:
+  selector:
+    app: {{ .Values.server.name }}
+  ports:
+    - { name: http, port: {{ .Values.server.port }}, targetPort: http }
+---
+# Admits only the gateway, and lets the server talk to DNS and nothing else. A compromised or malicious
+# image cannot reach the database, the Kubernetes API, other namespaces, or the internet.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Values.server.name }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ .Values.server.name }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.platform.namespace }}
+          podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - { protocol: TCP, port: {{ .Values.server.port }} }
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }

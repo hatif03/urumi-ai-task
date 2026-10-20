@@ -1,0 +1,6 @@
+apiVersion: v2
+name: urumi-hosted-mcp
+description: One admin-supplied MCP server image, run in the mcp-hosted namespace behind the gateway
+type: application
+version: 0.1.0
+appVersion: "1.0"

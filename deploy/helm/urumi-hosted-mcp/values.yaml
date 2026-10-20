@@ -1,0 +1,15 @@
+# Written by the provisioner for each hosted server; the defaults only make `helm template` work.
+server:
+  slug: example
+  name: mcp-example
+  image: ghcr.io/example/mcp:1.0.0
+  pullPolicy: IfNotPresent
+  port: 8080
+  env: {}
+  secretName: ""
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 128Mi }
+platform:
+  namespace: platform
+  otelEndpoint: http://otel-collector.platform.svc.cluster.local:4318
