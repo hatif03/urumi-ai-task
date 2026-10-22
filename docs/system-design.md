@@ -1,50 +1,101 @@
-# System design
+# System design and tradeoffs
 
-Living note for the submission. The build plan is `plan.md`. The reasons are the ADRs. When the running cluster differs from this file, this file is updated in that change and the log records why.
-
-Status: the k3d cluster `urumi` is running the full chart. Shop and dashboard respond on port 80. Evidence is in the log entry for 2026-10-14 and in the ADR outcomes.
+The architecture as built. The reasons are in `docs/adr/`; the data is in [data-model.md](data-model.md); the request path is in [mcp-internals.md](mcp-internals.md); who can do what is in [threat-model.md](threat-model.md). Where this file says something ran on a cluster, the evidence is in [log.md](log.md) and `docs/evidence/`.
 
 ## Shape
 
-Four layers on one Helm chart.
+```mermaid
+flowchart LR
+  subgraph Internet
+    U[Browser: dashboard, chat]
+    C[MCP client: Claude Code, Cursor, Inspector]
+    S[Shopper]
+  end
+  subgraph Ingress[ingress-nginx]
+    I1[dashboard host: / /api /mcp /oauth /.well-known]
+    I2[shop host and store-slug hosts]
+  end
+  subgraph platform[namespace platform]
+    D[dashboard x2: nginx, React SPA]
+    G[gateway x2: Bun, Hono]
+    P[provisioner: Bun, Helm]
+    PG[(Postgres)]
+    U1[utility-mcp x2]
+    U2[policy-mcp x2]
+    OBS[Prometheus, Grafana, Tempo, OTel collector]
+  end
+  subgraph store[namespace store]
+    W[WordPress + WooCommerce]
+    M[(MariaDB)]
+    WM[woocommerce-mcp x2]
+  end
+  subgraph storeN["namespace store-slug (one per created store)"]
+    W2[WordPress]
+    M2[(MariaDB)]
+    WM2[woocommerce-mcp]
+  end
+  subgraph hosted[namespace mcp-hosted]
+    H[admin-supplied MCP image]
+  end
+  U --> I1 --> D
+  I1 --> G
+  C --> I1
+  S --> I2 --> W
+  I2 --> W2
+  G --> PG
+  G --> WM --> W --> M
+  G --> U1
+  G --> U2
+  G --> WM2 --> W2 --> M2
+  G --> H
+  G -->|internal API| P
+  P -->|register| G
+  P -->|Helm, Kubernetes API| storeN
+  P --> PG
+```
 
-1. **Store.** One WordPress and WooCommerce site and a MariaDB database, persistent volumes, cash on delivery. [ADR 0004](adr/0004-woocommerce-on-official-images.md).
-2. **WooCommerce MCP server.** Our process, Streamable HTTP, five tools, ClusterIP only, REST to `wc/v3`. [ADR 0003](adr/0003-stateless-mcp-and-tool-names.md), [ADR 0004](adr/0004-woocommerce-on-official-images.md).
-3. **Gateway.** An MCP server at `/mcp` and the dashboard API. It is the only caller of upstream MCP servers. [ADR 0003](adr/0003-stateless-mcp-and-tool-names.md), [ADR 0006](adr/0006-gateway-auth-and-credentials.md).
-4. **Chat.** Tool loop in the gateway, acting as the logged-in user, showing the tools it called. [ADR 0006](adr/0006-gateway-auth-and-credentials.md).
+Four layers from the brief, plus the bonus: **Store** (WordPress, WooCommerce, MariaDB, persistent volumes, cash on delivery), **WooCommerce MCP server** (ours, Streamable HTTP, REST to `wc/v3`, ClusterIP only), **Gateway and dashboard**, **Chat agent** (inside the gateway process, acts as the signed-in user), and the **provisioner** with the per-store and hosted-server charts.
 
-Two more MCP servers, `utility` and `policy`, are seeded so a prompt can use two upstreams and so one pod can be killed without destroying the store. [ADR 0003](adr/0003-stateless-mcp-and-tool-names.md).
+Public: the dashboard host (`/`, `/api`, `/mcp`, `/oauth`, `/.well-known`), the shop host, and each store's host. Internal only: every MCP server, Postgres, the provisioner, metrics ports, the collector. Enforcement is the absence of an Ingress plus a NetworkPolicy per workload.
 
-Public Ingress hosts are the storefront and the dashboard (`/`, `/api`, `/mcp`). Metrics, the collector, and the MCP servers are not on the Ingress.
+## Architecture choices and tradeoffs
 
-## Aggregation and failure
-
-- Public tool names are `{serverSlug}__{toolName}`. The gateway strips the prefix and calls that upstream.
-- `tools/list` fans out in parallel. A server that misses the 3 second deadline is omitted and marked Unreachable. Other servers are still returned.
-- A disabled server is not contacted. Its tools disappear for the chat agent and for external clients.
-- Creates and order-status updates are not retried. Reads may retry once on a dropped connection.
-- Two gateway replicas can each serve any POST. Upstream status and the tool cache live in Postgres. [ADR 0007](adr/0007-scale-and-observe-from-the-first-deploy.md).
-
-## Runtime and deploy
-
-Bun workspace, Hono on `Bun.serve`, images from `oven/bun`. [ADR 0002](adr/0002-bun-runtime-and-workspaces.md).
-
-One chart, `values-local.yaml` for k3d and `values-prod.yaml` for k3s. Differences are hosts, images, disk size, resources, replica maximums, and secret material. [ADR 0005](adr/0005-one-helm-chart-two-value-files.md).
-
-## Observability
-
-JSON logs, `/metrics` on port 9090, trace id on the audit row and on `traceparent`, Prometheus, Grafana, Tempo, collector. [ADR 0007](adr/0007-scale-and-observe-from-the-first-deploy.md).
-
-## What the cluster changed
-
-WooCommerce 11 accepts consumer-key basic auth only when `is_ssl()` is true. In-cluster calls are HTTP, so WordPress marks `/wp-json/wc/` as HTTPS for that check. When `WP_HOME` is `http://`, a mu-plugin clears the flag after authentication so permalinks stay on the public scheme. The WordPress CLI image runs as Alpine www-data (uid 82) and cannot write files owned by Debian www-data (uid 33), so the bootstrap Job runs as root and chowns `wp-content` back to 33. MCP `structuredContent` has to be an object, so list tools wrap arrays as `{ items: [...] }` and leave the text content as the JSON array.
-
-## Production values
-
-Filled in from `values-prod.yaml`. The same chart renders with that file. The values that change are the shop and dashboard hostnames (`shop.example.com`, `dashboard.example.com`), image repositories (a registry path and `IfNotPresent` instead of local names and `Never`), PVC sizes (10Gi for the store and Postgres, 10Gi Prometheus, 5Gi Tempo), the WordPress and gateway limits, and the HPA maximum (4 instead of 2). Secrets are still referenced by name and created on the machine, not in the chart. TLS stays off.
-
-## Evidence
-
-| Claim | Where it was shown | When |
+| Choice | Why | Cost |
 | --- | --- | --- |
-| | Not run yet | |
+| Bun and Hono, TypeScript, one workspace, one lockfile (ADR 0002) | one runtime and language for gateway, MCP servers and provisioner; the MCP SDK runs on Bun; small images | Bun is younger than Node; two Bun quirks surfaced and are recorded in `log.md` |
+| Stateless Streamable HTTP, JSON responses, no sessions (ADR 0003) | any replica can serve any request; no affinity; a pod can be killed mid-conversation | no server-to-client messages (notifications, sampling); not needed by tools-only servers |
+| `{slug}__{tool}` names, prefix stripped on the way in (ADR 0003) | removes collisions without changing upstream tools; a model can see which server a tool is on | a tool whose own name contains `__` is skipped |
+| Official WordPress and MariaDB images, our templates, WP-CLI bootstrap Job (ADR 0004) | Bitnami's public images are no longer a safe dependency; the bootstrap is idempotent | more templates to own; images start as root |
+| WooCommerce over REST, not WP-CLI exec, not the WooCommerce MCP plugin (ADR 0004) | documented API, least privilege, a server we wrote ourselves as the brief requires | WooCommerce keys cannot be scoped per user; the gateway is where users are told apart |
+| One Helm chart, `values-local` and `values-prod` (ADR 0005) | the brief's "same charts, configuration changes only" | a few values differ in more than one file; values drift is checked by rendering both in CI |
+| Hashed keys, encrypted upstream credentials, no token passthrough (ADR 0006) | different secrets, different protections; the brief's four threat-model questions | one shared upstream credential per server |
+| Two replicas, shared rate limit, metrics, traces from the first deploy (ADR 0007) | proves the second replica is correct, not just present | heavier local cluster |
+| Versioned migrations (ADR 0009) | schema changes on a live database; two replicas migrating at once | no down migrations |
+| Grant table, most specific wins, read-only default (ADR 0010) | the brief's tool-permission example, enforced in the router | annotations are the upstream's claim |
+| Resolve, pin, deny at the network (ADR 0011) | SSRF protection that survives a DNS race | https is not pinned; network policy carries it |
+| Built-in OAuth 2.1 server (ADR 0012) | browser login for MCP clients, same permission path as keys | a consent page and three tables to own |
+| Separate provisioner driving Helm from a database state machine (ADR 0013) | idempotent, resumable, parallel, no Kubernetes rights in the gateway | desired state is in Postgres, not a CRD |
+| Namespace per store, quotas, default-deny policies (ADR 0014, 0015) | isolation and guardrails the brief lists | one WordPress and MariaDB per store, so a store costs about 400 MiB |
+| Hosted MCP images in a restricted namespace (ADR 0016) | the stand-out item, with the blast radius bounded | no egress for hosted servers by default |
+| Search surface for large catalogs (ADR 0017) | three tools instead of hundreds | two or three calls where one would do |
+
+## Tool aggregation, routing and failure handling
+
+1. `tools/list` fans out to every enabled upstream **in parallel**, each with a 3 second deadline, through a 30 second Postgres cache. A server that misses the deadline is left out and marked Unreachable with a reason; the rest are returned. The list is filtered by the caller's permissions.
+2. `tools/call` splits `slug__tool`, loads the server, applies the rate limit, checks the tool exists, applies permissions, calls the upstream with an 8 second deadline through a warm client, and writes the audit row. Reads are retried once on a dropped connection; creates and status updates are never retried.
+3. A disabled server is never contacted and vanishes from every surface. A dead one fails only its own calls, with `upstream_unreachable` or `upstream_timeout`.
+4. Upstream credentials are decrypted in the gateway and written to one outbound header. Nothing the caller sent is forwarded.
+
+Detail and the failure matrix: [mcp-internals.md](mcp-internals.md).
+
+## What changes for production
+
+DNS (dashboard, shop, wildcard for stores), ingress with cert-manager TLS, a registry and version-tagged images, a larger storage class and claims, higher limits, HPA max 4, two provisioner replicas, secrets generated on the node. The list of every value is in [vps-deploy.md](vps-deploy.md); the local domain approach (hosts file for two names, `*.localhost` for stores) is in the README.
+
+## Scaling and observability
+
+Gateway, dashboard and MCP servers run two replicas behind a Service with a PodDisruptionBudget, `maxUnavailable: 0` rolling updates and an HPA on CPU. State that must agree across replicas lives in Postgres: tool cache, server status, the probe lease, rate-limit buckets, audit. JSON logs carry a trace id; `/metrics` on port 9090 feeds Prometheus (`tool_calls_total`, `tool_call_duration_seconds`, `upstream_up`, `rate_limit_rejected_total`, provisioning gauges), Grafana ships a gateway dashboard, spans flow through the OTel collector to Tempo with W3C `traceparent` joining gateway, MCP server and WooCommerce spans. Alert rules are in the Prometheus config ([ADR 0020](adr/0020-alerts-and-failure-reasons.md)).
+
+## Limits worth stating
+
+One Postgres (no HA), one WordPress and MariaDB per store (no horizontal WordPress), the gateway's warm connections are per replica, the audit log has no retention job, alerts have no receiver, hosted servers have no egress, and https upstreams are not DNS-pinned. See [threat-model.md](threat-model.md) for the security view.

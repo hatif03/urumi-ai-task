@@ -32,3 +32,7 @@ Bitnami moved its public image catalog to a legacy registry and a paid secure-im
 - The official WordPress and MariaDB images start as root to fix volume ownership. Our own images run as uid 1000. The threat model records that exception.
 - The first boot of WordPress is slow. A startup probe covers it so liveness does not kill the copy onto the volume.
 - Recent WooCommerce builds can hide the storefront behind a coming-soon flag. The Job turns that off. Confirming that on the chosen plugin version is an experiment once the image tag is pinned.
+
+## Update 2026-10-20
+
+The store template set was copied into `deploy/helm/urumi-store` for per-store installs ([ADR 0014](0014-store-chart.md)); the core store in `store` is unchanged. Readiness of the WooCommerce MCP server now comes from a background check and the probes have explicit timeouts ([experiment 0003](../experiments/0003-probe-timeouts-under-load.md)).

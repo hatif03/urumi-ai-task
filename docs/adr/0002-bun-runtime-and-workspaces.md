@@ -38,3 +38,7 @@ One installer and one runtime removes a class of "works in the package manager, 
 - Node-only libraries need a check before we depend on them. OpenTelemetry auto-instrumentation for Node is one of those; tracing is manual spans plus an OTLP HTTP exporter (see ADR 0007).
 - The first implementation day includes a short experiment: boot the SDK's Streamable HTTP server under the pinned Bun version and call `initialize` from curl. That experiment gets its own file when it is run.
 - If that experiment fails, this ADR is superseded rather than quietly switched back to Node.
+
+## Update 2026-10-20
+
+The pinned image moved from `oven/bun:1.2.19-alpine` to `oven/bun:1.4.3-alpine`. Under load the gateway's Bun 1.2.19 process crashed (`panic: index out of bounds`, multi-gigabyte core dumps, pod restarts); the same suites run clean on 1.4.3 ([experiment 0006](../experiments/0006-gateway-collapse-under-load.md)). The decision to use Bun stands. The lockfile is unchanged and `--frozen-lockfile` accepts it.

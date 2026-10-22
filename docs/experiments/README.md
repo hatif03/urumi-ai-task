@@ -16,6 +16,11 @@ A decision we have already made is an ADR, not an experiment. If the experiment 
 | ID | Title | Result |
 | --- | --- | --- |
 | 0001 | Bun serves a stateless MCP initialize | Kept Bun. `initialize` returned `2025-06-18` as one JSON object. |
+| 0002 | How Bun SQL binds JSON parameters | A stringified parameter with `::jsonb` is stored as a JSON string; cast through `::text::jsonb`. |
+| 0003 | Why the WooCommerce MCP pods went NotReady during a busy rebuild | Probe timeout against a slow upstream; readiness answered from a background check, longer probe timeouts, a Grafana startup probe. |
+| 0004 | Does the in-memory rate-limit shortcut hold the limit? | No: it admitted ~20 calls a second whatever the limit. Removed. |
+| 0006 | Why the gateway collapsed under 40 concurrent callers | Bun 1.2.19 crashed in the pod under load (core dumps); pinned 1.4.3. Also: batched spans, one fewer round trip, an in-flight ceiling, a tool-cache race and a cold-connect stampede fixed. |
+| 0005 | `rejects.toMatchObject` on error objects under Bun 1.2.19 | Hung once; compare by hand in the provisioner tests. |
 
 ## Template
 

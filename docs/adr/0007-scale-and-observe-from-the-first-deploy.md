@@ -34,3 +34,7 @@ Microsoft's stateless router is what makes a second replica correct. A shared pr
 
 - The local cluster is heavier: two copies of each Bun service plus Prometheus, Grafana, Tempo, and the collector. Resource requests in `values-local.yaml` have to leave room for WordPress and MariaDB. If the laptop cannot start, the first knob is observability retention and Grafana memory, not dropping the gateway back to one replica. That tradeoff, if it happens, is an experiment and then either a values change or a superseding ADR.
 - Alert rules and a load test that scales 2 to 4 stay optional depth on top of this, not a substitute for it.
+
+## Update 2026-10-20
+
+The "one-second in-memory shadow" described above was removed because it admitted far more calls than the limit ([experiment 0004](../experiments/0004-rate-limit-shortcut.md)). Trace propagation, which this ADR described, was only partly wired at the time; it now is (W3C `traceparent` through the gateway, the MCP adapter and the WooCommerce call, verified in Tempo by `scripts/trace-check.ts`). Alert rules were added ([ADR 0020](0020-alerts-and-failure-reasons.md)).

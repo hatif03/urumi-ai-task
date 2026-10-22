@@ -6,13 +6,16 @@ What is installed for this repo, what we deliberately did not install, and how t
 
 | Tool | Role | Status on 2026-10-14 |
 | --- | --- | --- |
-| Bun 1.2.19 | Package manager and runtime for every service we write | Already present |
+| Bun 1.4.3 in the images (1.2.19 or newer on the host; the host copy is only for scripts and tests, `npm i -g bun@1.4.3` matches the images) | Package manager and runtime for every service we write | Images pinned to `oven/bun:1.4.3-alpine` after 1.2.19 crashed under load ([experiment 0006](experiments/0006-gateway-collapse-under-load.md)) |
 | Node and npm | Only used to run `npx skills` and, later, MCP Inspector. Application code runs on Bun | Already present |
 | kubectl 1.33.3 | Inspect the local cluster | Already present |
 | Docker | Runs k3d. The client is installed; the Docker Desktop engine was not running during setup | Start Docker Desktop before `k3d cluster create` |
 | Helm 4.3.0 | The only deploy tool. Installed with `winget install Helm.Helm` | Installed. Open a new shell so `helm` is on `PATH` |
 | k3d 5.9.0 | Local Kubernetes. Installed with `winget install k3d.k3d` | Installed. Same new-shell note as Helm |
 | WP-CLI | Store bootstrap | Not installed on the host. PHP is not installed, and the bootstrap runs `wordpress:cli` inside the cluster |
+| puppeteer-core 25 | Drives the real dashboard from `scripts/ui-check.ts` through an installed Edge or Chrome (no browser download; set `BROWSER_PATH` to choose) | Root devDependency |
+| cert-manager | TLS issuers for the VPS and the local rehearsal | Installed into a cluster with Helm, not on the host (`docs/vps-deploy.md`) |
+| Helm 3.18 inside the provisioner image | Runs `helm upgrade --install` for stores and hosted servers | Downloaded and checksum-verified in `apps/provisioner/Dockerfile` |
 
 Host WP-CLI was skipped on purpose. The store bootstrap is a Job using the `wordpress:cli` image, which matches [ADR 0004](adr/0004-woocommerce-on-official-images.md). Once Docker is running, a one-off check is:
 

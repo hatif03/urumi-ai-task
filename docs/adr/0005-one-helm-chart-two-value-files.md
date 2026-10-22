@@ -32,3 +32,7 @@ k3d and k3s both provide the `local-path` StorageClass. kind does not, so a kind
 - k3d and k3s Traefik must be disabled or it will occupy port 80.
 - Anything that cannot be expressed as a value is a chart bug, not a production-only template.
 - Observability components (ADR 0007) are templates in this same chart, so a local install and a VPS install both scrape metrics.
+
+## Update 2026-10-20
+
+`ingress.tls` now takes effect: the dashboard and shop Ingresses get `tls:` blocks and the cert-manager annotation, `certManager.enabled` creates the issuer, and the same values flow into every store ([ADR 0018](0018-tls-and-vps-strategy.md)). `scripts/vps-bootstrap.sh` and `docs/vps-deploy.md` list every value that differs.

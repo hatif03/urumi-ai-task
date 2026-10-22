@@ -35,3 +35,7 @@ This is the split Kong, Azure API Management, and Cloudflare portals use: the cl
 - WooCommerce cannot tell team members apart. Attribution exists in the audit log. Any authenticated user can call any enabled tool until per-role grants exist. That limit is stated in the threat model.
 - OAuth 2.1 as specified for remote MCP is a later addition on the same endpoint. The definition of done tests key issue and revoke.
 - A revoked key fails the next request and writes an `unauthorized` audit row.
+
+## Update 2026-10-20
+
+OAuth 2.1 was added on the same endpoint ([ADR 0012](0012-oauth-authorization-server.md)); API keys are unchanged. Per-role tool grants now exist ([ADR 0010](0010-tool-permissions.md)), so "any authenticated user may call any enabled tool" is no longer true: members default to read-only tools. `CREDENTIAL_KEY` rotation is supported (`CREDENTIAL_KEY_PREVIOUS` and `rekey.ts`).
