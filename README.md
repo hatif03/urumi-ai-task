@@ -1,66 +1,129 @@
 # Urumi
 
-A WooCommerce store and a team MCP gateway on Kubernetes. One Helm chart runs locally on k3d and, with `values-prod.yaml`, on k3s.
+A WooCommerce hosting platform with a team MCP gateway on Kubernetes. An admin connects MCP servers once; every team member then uses all of them through one MCP endpoint and through a chat agent in the dashboard. One Helm chart runs locally on k3d and, with `values-prod.yaml`, on a k3s VPS.
+
+```
+ browser ──► dashboard ─┐                                        ┌──► WooCommerce MCP ──► WordPress + MariaDB   (store)
+ MCP client ─ /mcp ─────┼──► gateway (MCP server + MCP client) ──┼──► utility MCP, policy MCP
+ chat agent (in gateway)┘            │                           ├──► per-store MCP ──► its own WordPress + MariaDB   (bonus)
+                                     │ internal API              └──► hosted MCP image                               (stand-out)
+                                  provisioner ──► Helm, Kubernetes API (namespace per store)
+```
+
+Read next: [system design and tradeoffs](docs/system-design.md) · [threat model](docs/threat-model.md) · [MCP internals](docs/mcp-internals.md) · [data model](docs/data-model.md) · [API](docs/api.md) · [decisions (ADRs)](docs/adr/README.md) · [VPS deploy](docs/vps-deploy.md) · [upgrade and rollback](docs/runbook-upgrade-rollback.md) · [demo script](docs/demo-script.md) · [security test log](docs/security-test-log.md).
+
+## What is where
+
+| Brief item | Where |
+| --- | --- |
+| Store on Kubernetes (WordPress, WooCommerce, MariaDB, persistent volumes, Ingress, probes, limits, Secrets) | `deploy/helm/urumi/templates/{mariadb,wordpress,bootstrap,ingress}.yaml`, `files/` |
+| WooCommerce MCP server (list/create products, list/get orders, update order status) | `apps/woocommerce-mcp` |
+| Gateway: registry, aggregation, routing, name collisions, timeouts, credentials, roles, keys, audit | `apps/gateway/src` (`router.ts`, `mcp.ts`, `routes/`, `policy.ts`, `crypto.ts`) |
+| Dashboard | `apps/dashboard` ([design note](docs/dashboard.md)) |
+| Chat agent | `apps/gateway/src/chat.ts` |
+| Helm charts and values | `deploy/helm/urumi` (+ `values-local.yaml`, `values-prod.yaml`), `deploy/helm/urumi-store`, `deploy/helm/urumi-hosted-mcp` |
+| Three upstream servers | WooCommerce, `apps/utility-mcp`, `apps/policy-mcp` |
+| **Bonus: multi-store provisioning** | `apps/provisioner`, `deploy/helm/urumi-store` ([ADR 0013](docs/adr/0013-provisioner-reconciler.md), [0014](docs/adr/0014-store-chart.md), [0015](docs/adr/0015-provisioner-rbac-and-admission.md)) |
+| **Stand-out: production-like VPS, TLS with cert-manager** | `scripts/vps-bootstrap.sh`, `values-prod.yaml`, `templates/cert-manager.yaml`, [docs/vps-deploy.md](docs/vps-deploy.md) |
+| **Stand-out: tool permissions** | `apps/gateway/src/policy.ts`, `routes/admin.ts`, dashboard Permissions page ([ADR 0010](docs/adr/0010-tool-permissions.md)) |
+| **Stand-out: OAuth on the gateway** | `apps/gateway/src/oauth.ts` ([ADR 0012](docs/adr/0012-oauth-authorization-server.md)) |
+| **Stand-out: handling many tools** | `apps/gateway/src/search.ts`, `mcp.ts` (`/mcp?surface=search`), chat switch ([ADR 0017](docs/adr/0017-tool-search-surface.md)) |
+| **Stand-out: hosted MCP servers** | `apps/provisioner/src/hosted.ts`, `deploy/helm/urumi-hosted-mcp` ([ADR 0016](docs/adr/0016-hosted-mcp-servers.md)) |
+| **Stand-out: security hardening** | SSRF `apps/gateway/src/ssrf.ts` ([ADR 0011](docs/adr/0011-ssrf-resolve-and-pin.md)), NetworkPolicies, RBAC and admission policy, non-root containers, encrypted credentials with rotation (`rekey.ts`) |
+| **Stand-out: scaling** | two replicas, shared Postgres rate limits, HPA, PDB, a per-replica in-flight ceiling ([ADR 0007](docs/adr/0007-scale-and-observe-from-the-first-deploy.md), [0022](docs/adr/0022-admission-control-and-autoscaler-ownership.md)); `scripts/loadtest.ts` |
+| **Stand-out: observability** | metrics, traces, alerts, failure reasons ([ADR 0020](docs/adr/0020-alerts-and-failure-reasons.md)) |
+| **Stand-out: upgrades and rollback** | `helm test`, `--atomic`, [runbook](docs/runbook-upgrade-rollback.md) ([ADR 0021](docs/adr/0021-upgrade-and-rollback.md)) |
+
+**How the WooCommerce MCP server talks to the store, and why.** Over WooCommerce's REST API (`/wp-json/wc/v3/products` and `/orders`) with HTTP Basic auth from a read/write consumer key held in a Kubernetes Secret and the MCP pod's environment, from inside the cluster over HTTP to the `wordpress` Service. REST is the integration WooCommerce documents and supports across versions, it needs no extra rights in the cluster, and it keeps each tool call an ordinary request with a deadline. The alternatives were WP-CLI inside the WordPress pod (needs `exec` rights and ties every call to a shell) and WooCommerce's own MCP plugin (the brief says to write the server ourselves). Details and the WooCommerce 11 basic-auth quirk are in [ADR 0004](docs/adr/0004-woocommerce-on-official-images.md).
+
+Interview study material: [`docs/study/`](docs/study/00-start-here.md).
 
 ## Local setup
 
-Install Docker, kubectl, Helm, k3d, and Bun. Open a new terminal if Helm or k3d were just installed so they are on `PATH`.
+Needs Docker (running), kubectl, Helm 3.14+ or 4, k3d 5.x and Bun (the images use 1.4.3; use the same on the host: `npm i -g bun@1.4.3`). On Windows use Git Bash for the scripts. Open a new terminal if Helm or k3d were just installed.
 
-Add to the hosts file:
+Add two names to the hosts file (`C:\Windows\System32\drivers\etc\hosts` on Windows, `/etc/hosts` elsewhere):
 
 ```text
 127.0.0.1 shop.local dashboard.local
 ```
 
-Then:
+New stores are served at `<slug>.shop.localhost`; browsers and curl resolve `*.localhost` to loopback by themselves, so there is nothing to add per store. (Windows' system resolver does not; use a browser, or `curl --resolve`, or `scripts/e2e.ts`, which sends a Host header.)
 
 ```sh
 bash scripts/dev-up.sh
 ```
 
-The script creates the k3d cluster with Traefik disabled, installs ingress-nginx, proves `shop.local` reaches a placeholder, builds the five images, and upgrades the chart to the full release. Generated passwords stay in `deploy/secrets/generated.env`, which is gitignored. The dashboard admin username is `ada`.
+It creates the k3d cluster (Traefik off), installs ingress-nginx, generates every password and key into `deploy/secrets/generated.env` (gitignored, mode 600) and creates the Kubernetes Secrets from it, builds the six images and imports them, installs the chart with `values-local.yaml`, and restarts pods that use a rebuilt `:local` image. The first run takes 10 to 15 minutes (image builds, WordPress install). It is safe to rerun. `ONLY=gateway,dashboard bash scripts/dev-up.sh` rebuilds just those; `SKIP_BUILD=1` only upgrades the chart.
 
-Open `http://shop.local` for the storefront and `http://dashboard.local` for the gateway UI. Cash on delivery is enabled. A sample product SKU `urumi-sample` is created by the bootstrap Job.
+Then:
+- Storefront: <http://shop.local>
+- Dashboard: <http://dashboard.local>, user `ada`, password `ADMIN_PASSWORD` in `deploy/secrets/generated.env`
+- `helm test urumi -n platform` runs the smoke test; `bun scripts/e2e.ts` runs the definition of done.
+
+To enable the chat agent set an LLM key before `dev-up.sh` (or edit the `gateway-llm` Secret and restart the gateway): `LLM_PROVIDER` (`openai`, `google`, `anthropic`), `LLM_MODEL`, `LLM_API_KEY`, and optionally `LLM_BASE_URL` for any OpenAI-compatible endpoint (Groq, OpenRouter, Ollama). Without a key the chat page says so and everything else keeps working.
+
+Free-tier examples (check the provider's current model names): Google Gemini `LLM_PROVIDER=google LLM_MODEL=gemini-2.0-flash LLM_API_KEY=...`; Groq `LLM_PROVIDER=openai LLM_BASE_URL=https://api.groq.com/openai/v1 LLM_MODEL=llama-3.3-70b-versatile LLM_API_KEY=...`. The key lives in the `gateway-llm` Secret, never in the repository or the chart. The gateway's NetworkPolicy allows public internet egress on 80 and 443 (and nothing private), so a hosted LLM API is reachable; a model on your own machine (Ollama) is a private address and would need an explicit egress rule.
 
 ## Place an order
 
-On `http://shop.local`, add the sample mug to the cart, open checkout as a guest, choose cash on delivery, and place the order. The order is stored in MariaDB and remains after the WordPress pod is deleted.
+On <http://shop.local> add the sample mug (or a product the agent created) to the cart, check out as a guest and choose **Cash on delivery**. The order appears in WooCommerce admin at <http://shop.local/wp-admin> (user `admin`, password `WP_ADMIN_PASSWORD` in the env file) under WooCommerce, Orders, and is stored in MariaDB on a persistent volume: delete the WordPress pod and it is still there.
 
-## Connect Cursor or Inspector
+## Connect an external MCP client
 
-In the dashboard, create an API key and copy the `umk_` token. It is shown once. Point the client at the gateway only:
+In the dashboard open **API keys**, create a key, copy the `umk_...` token (shown once). The only things the client needs are the URL and the key:
 
 ```json
 {
   "mcpServers": {
     "urumi": {
       "url": "http://dashboard.local/mcp",
-      "headers": {
-        "Authorization": "Bearer umk_..."
-      }
+      "headers": { "Authorization": "Bearer umk_..." }
     }
   }
 }
 ```
 
-Tool names look like `woocommerce__list_orders` and `policy__get_return_policy`. Revoking the key makes the next call return 401.
+Claude Code: `claude mcp add --transport http urumi http://dashboard.local/mcp --header "Authorization: Bearer umk_..."`. MCP Inspector: `npx @modelcontextprotocol/inspector`, transport Streamable HTTP, that URL and header.
 
-## Chat
+Tool names are `{server}__{tool}`: `woocommerce__list_orders`, `utility__get_current_time`, `policy__get_return_policy`, `store_alpha__list_orders`. Members see read-only tools by default; an admin can allow more on the **Permissions** page. A revoked key gets 401 on its next call.
 
-The chat page calls the same gateway router as `/mcp`, as the logged-in user, and shows each tool call. If `gateway-llm` has an empty `api-key`, chat returns 503 and `/mcp` keeps working. Set `LLM_API_KEY`, `LLM_PROVIDER` (`openai`, `google`, or `anthropic`), and `LLM_MODEL` before `dev-up.sh`, or update the `gateway-llm` Secret.
+**Browser login instead of a key (OAuth).** A client that supports the MCP authorization flow can be pointed at `http://dashboard.local/mcp` with no header: it receives a 401 with `resource_metadata`, discovers the authorization server, registers itself, sends you to a consent page after you sign in to the dashboard, and receives a token bound to this gateway. Connected apps are listed and revocable under **API keys**. `bun scripts/oauth-demo.ts` runs the whole flow from a script with PKCE.
 
-## Production
+**Hundreds of tools.** `http://dashboard.local/mcp?surface=search` exposes three tools (`search_tools`, `describe_tool`, `call_tool`) instead of the full catalog. The chat agent switches to them on its own above 20 tools.
 
-On a k3s node with Traefik disabled and ingress-nginx installed, create the same Secret names with new values. Push the images and set their repositories in `values-prod.yaml`. Install with:
+## Use the chat agent
 
-```sh
-helm upgrade --install urumi deploy/helm/urumi -n platform -f deploy/helm/urumi/values-prod.yaml
-```
+Dashboard, **Chat**. Ask "create a product called Test Mug at 14.50", then place an order on the storefront by hand, then ask "what orders came in today?". Each answer lists the tools it called (server, tool, arguments, result). The agent acts as you: its calls are in the audit log under your name with actor `chat`, and it only receives the tools you are allowed to call.
 
-The template does not change between environments. Hosts, image repositories, disk size, resource limits, the HPA maximum, and the Secrets do.
+## Stores (bonus)
+
+Dashboard, **Stores**, enter a name. The platform creates namespace `store-<slug>` with its own MariaDB, WordPress, Secrets, volumes, Ingress host `<slug>.shop.localhost`, ResourceQuota, LimitRange and NetworkPolicies, then registers `store_<slug>` in the gateway. Status goes Provisioning, Ready or Failed (with a reason). Up to 3 stores per user, 10 minutes each, several in parallel; retry after a failure is safe. Deleting a store removes its tools from the gateway first, then the release, the namespace and its volumes. Try: create two stores, place an order in each, ask the chat agent "compare today's orders in alpha and beta", delete one and watch its tools disappear (`bun scripts/e2e.ts` with `STORES=1` does this and checks the namespace and volumes are gone). Isolation between stores: `STORE_A=alpha STORE_B=beta bun scripts/security-check.ts`.
+
+## Hosted MCP servers (stand-out)
+
+Dashboard, **Hosted** (admin): give a slug, an image from an allowed registry with an explicit tag, a size and environment variables (secret ones go into a Kubernetes Secret, write-only). It runs in `mcp-hosted` with a restricted Pod Security profile, a NetworkPolicy that admits only the gateway, and DNS-only egress, and is registered automatically. Locally, images imported into k3d work (`urumi-utility-mcp:local`).
+
+## Production (k3s VPS)
+
+[docs/vps-deploy.md](docs/vps-deploy.md) is the guide. Short form: DNS for `dashboard.<domain>`, `shop.<domain>` and `*.stores.<domain>`, push the six images to a registry with a version tag, then on the VPS `DOMAIN=... EMAIL=... REGISTRY=... TAG=... bash scripts/vps-bootstrap.sh`. It installs k3s (Traefik disabled), ingress-nginx and cert-manager, generates the Secrets, installs the same chart with `values-prod.yaml`, and runs `helm test`. What differs from local is a table of values, listed in that guide. Upgrade and rollback: [runbook](docs/runbook-upgrade-rollback.md).
 
 ## Checks
 
-`bun test` covers the MCP wire protocol, tool prefixing, a slow upstream, a dead upstream, revoked keys, and SSRF. `scripts/seed-check.sh` is the cluster check. Set `KEY` to a live token.
+```sh
+bun test --timeout 30000                                                       # unit and in-process integration
+TEST_DATABASE_URL=postgres://urumi:test@127.0.0.1:55432/urumi bun test         # + Postgres store and provisioner tests
+helm lint deploy/helm/urumi -f deploy/helm/urumi/values-prod.yaml              # chart
+helm test urumi -n platform                                                    # smoke test on the running release
+bun scripts/e2e.ts                                                             # the definition of done, two users, against the cluster
+STORES=1 bun scripts/e2e.ts                                                    # + multi-store bonus
+bun scripts/security-check.ts                                                  # SSRF, NetworkPolicy, RBAC, secrets at rest
+```
+A throwaway Postgres for the database tests: `docker run -d --name urumi-test-pg -e POSTGRES_PASSWORD=test -e POSTGRES_USER=urumi -e POSTGRES_DB=urumi -p 55432:5432 postgres:16-alpine`.
 
-Deleting the Helm release does not delete PVCs. Snapshot them before a WooCommerce plugin upgrade. Database migrations from the plugin are forward-only.
+## Operating notes
+
+- Deleting the Helm release keeps the core store's and the platform database's volumes (`helm.sh/resource-policy: keep`); a provisioned store is deleted with its volumes on purpose. Snapshot before a WooCommerce plugin upgrade; plugin database migrations are forward-only ([runbook](docs/runbook-upgrade-rollback.md)).
+- Rotating the key that encrypts upstream credentials is a documented procedure with a re-encryption command, not a redeploy.
+- Alert rules exist in Prometheus; nothing pages anyone until you add an Alertmanager receiver.
+- Everything decided and everything that went wrong is in `docs/adr/`, `docs/experiments/` and `docs/log.md`.
