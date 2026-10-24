@@ -1,0 +1,18 @@
+PASS  store created  (recov4wub)
+PASS  the store is in the release phase (Helm installing)  (provisioning/release)
+      killing provisioner-8d8cc6899-d2cwm
+PASS  Kubernetes started a replacement provisioner pod  (provisioner-8d8cc6899-626b2)
+PASS  the store completes, or fails cleanly with a reason  (ready )
+PASS  in this run it completed  (attempt 1)
+PASS  exactly one namespace exists for it
+PASS  one Helm release lineage  (1 revision secret(s))
+PASS  the credentials exist once
+PASS  it is registered in the gateway and Connected
+      killing the provisioner during the delete
+PASS  the delete finishes after the restart
+PASS  the namespace is gone
+PASS  its volumes are gone
+PASS  its MCP registration is gone
+
+ALL PASSED
+exit 0

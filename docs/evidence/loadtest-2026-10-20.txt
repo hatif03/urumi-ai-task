@@ -1,0 +1,29 @@
+  ... gateway ready/desired replicas: 2/2
+  ... gateway ready/desired replicas: 2/2
+  ... gateway ready/desired replicas: 2/2
+  ... gateway ready/desired replicas: 2/2
+  ... gateway ready/desired replicas: 2/2
+  ... gateway ready/desired replicas: 2/2
+  ... gateway ready/desired replicas: 2/2
+  ... gateway ready/desired replicas: 2/4
+  ... gateway ready/desired replicas: 2/4
+  ... gateway ready/desired replicas: 4/4
+  ... gateway ready/desired replicas: 4/4
+  ... gateway ready/desired replicas: 4/4
+
+window   calls   ok%    p50ms  p95ms  p99ms
+  0-5       291  100.0     583   1501   2113
+  5-10      384   98.4     397   1280   1902
+ 10-15      351   98.6     407   1408   2173
+ 15-20      291   99.3     515   1816   3013
+ 20-25      331   99.7     470   1519   1978
+ 25-30      338   99.4     421   1708   2274
+ 30-35      308   99.7     492   1691   2372
+ 35-40      331   99.7     415   1601   2314
+ 40-45      302   99.7     513   1920   2506
+ 45-50      185  100.0     610   2408   2896
+ 50-55      164  100.0     976   3908   4895
+ 55-60      192  100.0     675   3376   5500
+
+total 3508 calls, 58/s, success 99.46%, statuses of failures: 200
+exit 0

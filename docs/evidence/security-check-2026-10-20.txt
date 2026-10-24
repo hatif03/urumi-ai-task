@@ -1,0 +1,60 @@
+
+== SSRF: the API refuses an admin-supplied address in a blocked range
+PASS  rejects cloud metadata endpoint  (400 blocked address)
+PASS  rejects loopback  (400 blocked address)
+PASS  rejects Kubernetes API service  (400 blocked host)
+PASS  rejects private range  (400 blocked address)
+PASS  rejects IPv4-mapped IPv6 metadata  (400 blocked address)
+PASS  rejects userinfo in the URL  (400 userinfo is not allowed)
+PASS  nothing was stored by the rejected requests
+
+== Network layer: default deny, and what the gateway pod can and cannot reach
+PASS  gateway pod cannot open the metadata address 169.254.169.254:80
+PASS  gateway pod cannot open the Kubernetes API service 10.43.0.1:443
+PASS  gateway pod can reach the WooCommerce MCP server it is meant to call
+PASS  gateway pod can reach its database
+PASS  an unlabelled pod cannot reach the WooCommerce MCP server
+PASS  an unlabelled pod in the store namespace cannot reach MariaDB
+PASS  an unlabelled pod cannot reach Postgres  (BLOCKED)
+PASS  no Ingress exposes an MCP server: only the gateway is public
+
+== Provisioner: least privilege, tested by impersonating its service account
+PASS  cannot read Secrets in kube-system
+PASS  cannot list Secrets cluster-wide
+PASS  cannot create workloads in kube-system
+PASS  cannot delete nodes
+PASS  can create and delete namespaces (what it needs)
+PASS  cannot patch or relabel an existing namespace
+PASS  cannot bind its role into kube-system (admission policy)  (error: failed to create rolebinding: rolebindings.rbac.authorization.k8s.io "evil" is forbidden: ValidatingAdmissionPolicy 'urumi-provisione)
+PASS  cannot bind cluster-admin to itself  (error: failed to create rolebinding: rolebindings.rbac.authorization.k8s.io "evil2" is forbidden: user "system:serviceaccount:platform:provi)
+
+== Containers: non-root, no privilege escalation, read-only root, no service-account token where unneeded
+PASS  our Bun and nginx containers run non-root, no escalation, read-only root  (11 pods)
+PASS  gateway runs as uid 1000  (1000)
+PASS  hosted MCP pods get no service-account token
+PASS  namespaces enforce the baseline Pod Security profile
+
+== Every workload: probes and resource requests and limits
+PASS  every long-running container has a readiness, liveness or startup probe  (18 pods)
+PASS  every container has CPU and memory requests and a memory limit
+
+== Secrets at rest
+PASS  API keys are stored as a 64-hex SHA-256, never the token  (727784ea9467129f...)
+PASS  no row holds a plaintext key
+PASS  passwords are argon2id hashes
+PASS  an upstream credential is stored as AES-GCM ciphertext  ({"iv":"TDSnWc2j5YNin5ff","tag":"U75PsIVtwJnvVpsSIUySNg==","c...)
+PASS  and never appears in an API response
+PASS  no secret material in the source tree
+
+== Isolation between stores
+PASS  a pod in store-isoaormu cannot reach store-isobormu's MariaDB
+PASS  a pod in store-isoaormu cannot reach store-isobormu's WordPress
+PASS  a pod in store-isoaormu cannot reach store-isobormu's MCP server
+PASS  an unlabelled pod in store-isoaormu cannot reach its own MariaDB either (only WordPress and the bootstrap job can)
+PASS  a pod in store-isoaormu cannot reach the core store's MCP server
+PASS  store-isoaormu's own MCP server cannot reach its own MariaDB (REST to WordPress only)
+PASS  store-isoaormu has a ResourceQuota and a LimitRange
+PASS  store-isoaormu carries the managed and Pod Security labels
+
+ALL PASSED
+exit 0

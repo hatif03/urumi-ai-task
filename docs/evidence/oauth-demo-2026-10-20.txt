@@ -1,0 +1,23 @@
+PASS  an unauthenticated call is 401 with a resource_metadata pointer  (Bearer resource_metadata="http://dashboard.local/.well-known/oauth-protected-resource")
+PASS  protected resource metadata names the MCP URL and its authorization server  ({"resource":"http://dashboard.local/mcp","authorization_servers":["http://dashboard.local"],"bearer_methods_supported":["header"],"scopes_supported":["mcp"],"resource_name":"Urumi MCP gateway"})
+PASS  the server advertises PKCE S256 only
+PASS  client metadata documents and dynamic registration are both offered
+PASS  dynamic client registration  (urumi_c_8BbIrS5-_4UCtxHbT_eHb0v04q5rD8-6)
+PASS  without a session the authorize step sends the browser to the login page
+PASS  a signed-in user sees a consent page naming the client
+PASS  allow redirects to the client with the state and the issuer (RFC 9207)
+PASS  a wrong code_verifier is refused  (PKCE verification failed)
+PASS  the correct verifier yields an access and a refresh token  (expires_in 3600)
+PASS  an authorization code cannot be used twice
+PASS  ...and using it revoked the tokens it had issued (code replay means the code leaked)
+PASS  the access token lists the same tools an API key does  (9 tools)
+PASS  and calls a tool as the user who consented
+PASS  a refresh token yields a new pair and is itself replaced
+PASS  reusing the old refresh token is refused
+PASS  ...and the whole grant is revoked, including the newer token
+PASS  a new grant works
+PASS  POST /oauth/revoke ends the grant
+PASS  asking for a token for another resource is refused
+
+ALL PASSED
+exit 0

@@ -1,0 +1,13 @@
+PASS  the response carries the client's trace id  (00-45cd2bc697ae3e95cc0be0ddea833c5a-5c3ce4ff800af9f8-01)
+PASS  the audit row has the same trace id
+      woocommerce-mcp    woocommerce.http
+      woocommerce-mcp    mcp.tool list_products
+      gateway            gateway.call_upstream
+      gateway            mcp.tool woocommerce__list_products
+PASS  Tempo has the gateway's upstream-call span
+PASS  and the WooCommerce MCP server's tool span
+PASS  and the REST call to the store
+PASS  the REST span is a child of the tool span, which is a child of the gateway's span  (mcp.tool list_products)
+
+ALL PASSED
+exit 0

@@ -1,0 +1,16 @@
+== install cert-manager
+PASS  cert-manager is installed
+== upgrade the platform release with the production TLS values and a self-signed issuer
+PASS  helm upgrade with TLS values succeeded
+PASS  cert-manager issued the dashboard certificate (secret urumi-tls)
+      cert-manager urumi-ca True urumi-ca 29s;platform urumi-tls True urumi-tls 2m46s;store urumi-tls-shop True urumi-tls-shop 2m46s;
+== talk to the Ingress over https (port-forward, SNI dashboard.local)
+      issuer=CN=urumi-local-ca subject= notAfter=Jan 18 11:08:44 2027 GMT 
+PASS  the certificate is signed by the private CA created by the issuer
+PASS  the OAuth resource identifier is the https URL
+PASS  the session cookie is Secure and HttpOnly: set-cookie: urumi_session=eyJ1aWQiOiI5ODY1NTk5Mi05YTU1LTQ3MzItODc3NS04MjUxZWI5OWNjYmQiLCJy...
+== put the release back
+PASS  local values restored
+PASS  the Ingress is back to plain http
+
+ALL PASSED

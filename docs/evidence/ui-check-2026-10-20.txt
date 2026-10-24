@@ -1,0 +1,24 @@
+PASS  an anonymous visit lands on the login page  (http://dashboard.local/login)
+PASS  a wrong password shows the error
+PASS  admin signs in and lands on Servers
+PASS  the WooCommerce server is listed first-class
+PASS  all three upstreams show a status  (Connected seen)
+PASS  no secret material on the page
+PASS  /stores renders its "Stores" heading
+PASS  /chat renders its "Chat" heading
+PASS  /keys renders its "API keys" heading
+PASS  /hosted renders its "Hosted" heading
+PASS  /members renders its "Members" heading
+PASS  /permissions renders its "Permissions" heading
+PASS  /audit renders its "Audit log" heading
+PASS  /account renders its "Account" heading
+PASS  the audit table has user and duration columns  (When|User|Via|Server|Tool|Outcome|Duration|Trace)
+PASS  and has rows  (100)
+PASS  creating a key shows the token once
+PASS  the create-a-store form is present
+PASS  chat shows its input or says no LLM is configured
+PASS  log out returns to the login page
+PASS  no page errors or console errors during the run
+
+ALL PASSED
+exit 0

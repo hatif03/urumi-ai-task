@@ -1,0 +1,87 @@
+
+== Setup: admin A, member B, one key each
+PASS  admin signs in to the dashboard API
+PASS  admin invites member B  (bea0do8w)
+PASS  each user issues their own key
+
+== Servers: three upstreams, one of them the WooCommerce MCP server
+PASS  woocommerce, utility and policy are Connected  (utility:connected:2 policy:connected:2 woocommerce:connected:5)
+PASS  a member never receives an upstream URL
+PASS  no credential material in the server list
+
+== Store: storefront, product, checkout, order in WooCommerce
+PASS  storefront answers  (200)
+PASS  user A creates a product through the gateway  ({"id":24,"name":"E2E Mug 0do8w","permalink":"http://shop.local/product/e2e-mug-0do8w/","pr)
+PASS  the new product has a storefront page with its name
+PASS  and is in the storefront's public product list
+PASS  a shopper checks out with cash on delivery  (order 25)
+
+== External client, user B: same orders question, two upstreams in one task
+PASS  B sees the WooCommerce read tools
+PASS  B asks for today's orders and gets the order  (order 25)
+PASS  one task uses tools from woocommerce, utility and policy
+
+== Permissions: a member cannot write
+PASS  write tools are hidden from B's tool list
+PASS  A still sees them
+PASS  B's direct call to a hidden tool is rejected  (not permitted: members may call read-only tools only)
+
+== Many tools: the search surface
+PASS  ?surface=search exposes three tools  (search_tools,describe_tool,call_tool)
+PASS  search_tools finds the orders tool first  (woocommerce__list_orders)
+PASS  call_tool runs the tool it found
+
+== Control: revoke, disable, kill
+PASS  admin revokes B's key
+PASS  B's next call is rejected with 401
+PASS  disabling a server removes its tools from the external client
+PASS  a call to a disabled server's tool is refused  (server is disabled)
+PASS  re-enabling brings them back
+PASS  with one upstream dead the others still list
+PASS  and still answer calls
+PASS  the dead one returns a clear error  (upstream_unreachable)
+PASS  the dashboard shows it Unreachable, with a reason  (connection refused: ECONNREFUSED: Unable to connect. Is the computer able to acc)
+PASS  and Connected again once the pod is back
+
+== Audit: every call above, attributed
+PASS  A's create_product is under A's name
+PASS  B's list_orders is under B's name
+PASS  B's denied write is recorded as denied
+PASS  the revoked key's rejected call is recorded
+PASS  rows carry server and duration
+PASS  a member cannot read the audit log
+
+== Bonus: two stores, compare orders, delete one
+PASS  two stores are created in parallel  (201,201)
+PASS  creating the same store again is idempotent
+PASS  both stores reach Ready  (ready/done | ready/done)
+PASS  each store's tools appear, named after the store  (store_alpha0do8w__list_orders, store_beta0do8w__list_orders)
+PASS  an order is placed on each storefront  (order 11 | order 11)
+PASS  today's orders compare across the two stores  (1 vs 1)
+PASS  each store has its own working storefront URL
+PASS  each namespace has a ResourceQuota and a LimitRange
+PASS  the per-user cap refuses the fourth store  (201 then 429)
+PASS  deleting a store removes it from the list  (ready)
+PASS  its tools are gone, the other store's remain
+PASS  its MCP registration is gone
+PASS  its namespace is gone
+PASS  its volumes are gone
+
+== Stand-out: a hosted MCP server from an image
+PASS  an image with the latest tag is refused  (the latest tag is not allowed; use a version tag or a digest)
+PASS  an image from a registry that is not allowed is refused  (image must come from one of: urumi-, ghcr.io/)
+PASS  a member cannot see or create hosted servers
+PASS  an admin deploys the utility image as a hosted server  (provisioning)
+PASS  it reaches Ready and is registered with the gateway  (ready )
+PASS  its tools appear in the gateway's list  (hosted_e2e0do8w__echo)
+PASS  and a call to it works end to end
+PASS  the pod is non-root, read-only, with no service-account token
+PASS  it has resource limits and its own NetworkPolicy
+PASS  its secret environment is a Kubernetes Secret
+PASS  the secret value is not in Postgres
+PASS  deleting it removes the row
+PASS  and its tools
+PASS  and the Deployment, Service, Secret and NetworkPolicy  (networkpolicy.networking.k8s.io/default-deny )
+
+ALL PASSED in 398s
+exit 0
