@@ -9,4 +9,3 @@ deploy/secrets/
 .DS_Store
 coverage/
 docs/demo/out/
-docs/demo/urumi-demo.mp4

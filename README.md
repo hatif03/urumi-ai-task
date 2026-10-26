@@ -10,9 +10,29 @@ A WooCommerce hosting platform with a team MCP gateway on Kubernetes. An admin c
                                   provisioner ──► Helm, Kubernetes API (namespace per store)
 ```
 
+## Live deployment
+
+The system is running on a k3s server on AWS (EC2 in `ap-south-1`) behind real Let's Encrypt certificates. Try it:
+
+| What | Where |
+| --- | --- |
+| Dashboard (servers, stores, chat, keys, audit) | https://dashboard.13-207-8-182.sslip.io |
+| Storefront (WooCommerce) | https://shop.13-207-8-182.sslip.io |
+| Gateway MCP endpoint (for Claude Code, Cursor, Inspector) | https://dashboard.13-207-8-182.sslip.io/mcp |
+| Stores you create in the dashboard | `https://<slug>.stores.13-207-8-182.sslip.io` |
+
+| Account | Role | Username | Password |
+| --- | --- | --- | --- |
+| Reviewer | admin: manage servers, members, permissions, stores, hosted servers; sees the audit log | `reviewer` | `S2FGnPOMGyOGy9ouQy` |
+| Teammate | member: uses the tools its role allows, own API keys, chat | `teammate` | `wEJYd4MQpSPIbgdMhm` |
+
+What to try: sign in as `teammate`, open **API keys**, create a key, then connect an MCP client with only the URL and that key (`claude mcp add --transport http urumi https://dashboard.13-207-8-182.sslip.io/mcp --header "Authorization: Bearer umk_..."`); open **Chat** and ask for today's orders; place an order on the storefront (guest checkout, cash on delivery). As `reviewer`, open **Servers**, **Stores**, **Permissions** and **Audit** to see the same calls attributed to each user. The WordPress admin of the demo store is not published here; the order list is visible through the chat and the MCP tools, and the credential is available on request.
+
+These two accounts exist for the review only. The server is a small single node that may be switched off after the review (the cost is about 2 USD a day), and the accounts and the `sslip.io` names go with it. The repository is public, so treat these passwords as public and disposable.
+
 ![Architecture](docs/architecture.svg)
 
-**Status:** everything in the brief is built and was run end to end on a real k3s server on AWS behind Let's Encrypt certificates (65 of 65 checks, [evidence](docs/evidence/e2e-vps-aws-2026-10-26.txt)). [requirements-coverage.md](docs/requirements-coverage.md) maps each line of the brief to the code and the evidence. Demo: [docs/demo-narration.md](docs/demo-narration.md) is the script of the video; `docs/demo/urumi-demo.mp4` is the video itself (how it was made: [Demo video](#demo-video)).
+**Status:** everything in the brief is built and was run end to end on a real k3s server on AWS behind Let's Encrypt certificates (65 of 65 checks, [evidence](docs/evidence/e2e-vps-aws-2026-10-26.txt)). [requirements-coverage.md](docs/requirements-coverage.md) maps each line of the brief to the code and the evidence. Demo: [docs/demo-narration.md](docs/demo-narration.md) is the script of the video; [docs/demo/urumi-demo.mp4](docs/demo/urumi-demo.mp4) is the video itself (about 20 minutes, 43 MB, synthetic narrator voice) (how it was made: [Demo video](#demo-video)).
 
 Read next: [requirements coverage](docs/requirements-coverage.md) · [system design and tradeoffs](docs/system-design.md) · [threat model](docs/threat-model.md) · [MCP internals](docs/mcp-internals.md) · [data model](docs/data-model.md) · [API](docs/api.md) · [decisions (ADRs)](docs/adr/README.md) · [VPS deploy](docs/vps-deploy.md) · [upgrade and rollback](docs/runbook-upgrade-rollback.md) · [demo script](docs/demo-script.md) · [security test log](docs/security-test-log.md).
 
