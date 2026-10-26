@@ -28,6 +28,7 @@ export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 kubectl wait --for=condition=Ready node --all --timeout=180s
 
 command -v helm >/dev/null || curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+command -v unzip >/dev/null || { apt-get update -qq && apt-get install -y -qq unzip; }
 if ! command -v bun >/dev/null; then curl -fsSL https://bun.sh/install | bash; export PATH="$HOME/.bun/bin:$PATH"; fi
 
 helm upgrade --install ingress-nginx ingress-nginx --repo https://kubernetes.github.io/ingress-nginx \
@@ -39,6 +40,11 @@ helm upgrade --install cert-manager cert-manager --repo https://charts.jetstack.
 source scripts/lib/secrets.sh
 urumi_generate_secrets "$SECRETS_FILE"
 urumi_apply_secrets "$SECRETS_FILE" "admin@shop.${DOMAIN}"
+# The Secrets script creates the namespaces first; Helm 3 only adopts a namespace that carries its ownership metadata.
+for ns in platform store; do
+  kubectl label ns "$ns" app.kubernetes.io/managed-by=Helm --overwrite
+  kubectl annotate ns "$ns" meta.helm.sh/release-name=urumi meta.helm.sh/release-namespace=platform --overwrite
+done
 echo "Secrets are in $SECRETS_FILE (mode 600). Back it up: losing CREDENTIAL makes stored upstream credentials unreadable."
 
 images=()

@@ -1,0 +1,23 @@
+{{- if and .Values.certManager.enabled (not .Values.skeletonOnly) (not .Values.certManager.selfSigned) }}
+{{- /* The default-deny policies would otherwise block ingress-nginx from reaching cert-manager's HTTP-01 solver pod, and every certificate would stay Pending (502 on /.well-known/acme-challenge). */}}
+{{- range $ns := list "platform" "store" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-acme-http01-solver
+  namespace: {{ $ns }}
+spec:
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - { protocol: TCP, port: 8089 }
+{{- end }}
+{{- end }}
