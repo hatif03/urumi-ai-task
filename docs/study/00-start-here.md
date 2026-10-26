@@ -35,7 +35,9 @@ What is checked and what is not. Every statement about this repo in these files 
 
 **The bonus.** A provisioner service turns the store into a platform. From the dashboard a user creates a store: a new namespace, its own database, Secrets, volumes, Ingress host, quota and network isolation, installed as a Helm release, registered in the gateway automatically as `store_<name>__*`. Creation is idempotent and resumes after a restart. Delete removes the registration first, then the release, the namespace and the volumes. An admin can also deploy an MCP server from a container image into a locked-down namespace.
 
-**What I would say is weakest.** Postgres is a single pod. The store MCP servers trust the network and not a token. Permissions trust the annotations an upstream declares. Alerts are rules in Prometheus with no Alertmanager behind them. What ran on the k3d cluster is recorded in the 2026-10-20 entry of [docs/log.md](../log.md) and in `docs/evidence/` (the end-to-end run with two users and two stores, the OAuth flow, security checks, the trace check, the browser check, the load test, the rollback and TLS rehearsals, the recovery check). A run on a real VPS is the item you must do yourself if you want to claim it.
+**What I would say is weakest.** Postgres is a single pod. The store MCP servers trust the network and not a token. Permissions trust the annotations an upstream declares. Alerts are rules in Prometheus with no Alertmanager behind them. Chat runs on a free-tier open-weight model (`openai/gpt-oss-120b` on Groq), so its answers vary, and the tests use a fake model. What ran on the k3d cluster is recorded in the 2026-10-20 entry of [docs/log.md](../log.md) and in `docs/evidence/` (the end-to-end run with two users and two stores, the OAuth flow, security checks, the trace check, the browser check, the load test, the rollback and TLS rehearsals, the recovery check).
+
+**It also runs for real.** On 2026-10-26 the same charts were deployed on AWS (EC2 t3.large, Ubuntu 24.04, k3s v1.36, `ap-south-1`, an Elastic IP, `sslip.io` hostnames, real Let's Encrypt certificates) with `scripts/vps-bootstrap.sh` and `values-prod.yaml`, and the full `scripts/e2e.ts` passed there: 65 of 65 checks, including two stores in parallel, a hosted server and killing an upstream pod ([docs/evidence/e2e-vps-aws-2026-10-26.txt](../evidence/e2e-vps-aws-2026-10-26.txt), [docs/evidence/vps-aws-deployment-2026-10-26.txt](../evidence/vps-aws-deployment-2026-10-26.txt)). Say the limits yourself: `sslip.io` is not a domain you own, the images were copied to the node and not pulled from a registry, it is one node, and the instance may no longer be running. Four things only the real host exposed are in [03-interview-questions.md](03-interview-questions.md) section 17.
 
 ## Read the 2026-10-20 log entry and the experiments
 
@@ -44,7 +46,8 @@ Interviewers like "what broke, and how did you find out". This project has real 
 - the **2026-10-20 entry in [docs/log.md](../log.md)**: the audit of the first build, then the list "Found by running it, then fixed";
 - **[experiment 0006](../experiments/0006-gateway-collapse-under-load.md) and [ADR 0022](../adr/0022-admission-control-and-autoscaler-ownership.md)**: throughput collapsed at 8% node CPU; the cause was the Bun 1.2.19 runtime crashing inside the pod (the image is now `oven/bun:1.4.3-alpine`). This is the best story in the project; learn it first.
 - **[docs/experiments/](../experiments/README.md)**: 0002 (Bun SQL stored a stringified JSON parameter as a JSON string), 0003 (readiness probes timing out under load made the gateway lose the store, and Grafana restarted for six days), 0004 (an in-memory rate-limit shortcut admitted about 20 calls a second whatever the limit), 0005 (a test matcher that hung);
-- the evidence files in `docs/evidence/`, so you know exactly what each run proved.
+- the evidence files in `docs/evidence/`, so you know exactly what each run proved;
+- **[docs/vps-deploy.md](../vps-deploy.md)** ("The AWS run, step by step" and "What the real run changed") and **[docs/requirements-coverage.md](../requirements-coverage.md)**, which maps every line of the brief to where it is met and how it was checked, and lists what is still open.
 
 [03-interview-questions.md](03-interview-questions.md) section 16 turns these into model answers (questions 156 to 167; start with 162). Each story has the same shape: what you saw, how you found the cause, what you changed, what test or check now guards it. Tell them in that order.
 
@@ -63,6 +66,17 @@ About 2 to 3 hours a day. Section numbers in "Resources" are the numbered sectio
 | 7 | Nothing new. Run the demo script twice ([docs/demo-script.md](../demo-script.md)). | Re-read [04](04-tradeoffs-cheatsheet.md); read the 2026-10-20 log entry and `docs/experiments/` | The "hard follow-ups", "what broke" and "AI usage" questions, out loud | all |
 
 If you only have two days: do days 2 and 5, then read the cheat sheet.
+
+## Demo day checklist
+
+A demo video is being produced. Keep these open and in this order:
+
+1. **[docs/demo-script.md](../demo-script.md)**: the definition-of-done flow, step by step, with the two users and the commands.
+2. **[docs/demo-narration.md](../demo-narration.md)**: what to say at each step (the file may appear shortly after this one; if the link is empty, use the script and the walkthrough traces).
+3. **[04-tradeoffs-cheatsheet.md](04-tradeoffs-cheatsheet.md)**, section "Demo day checklist": what to start, what to open, the fallbacks table, and the live URL pattern.
+4. Before recording: `helm test urumi -n platform` and `bun scripts/e2e.ts` (add `STORES=1` and `HOSTED=1`) so you know the baseline. On the live deployment run the same suite over HTTPS (command in [docs/vps-deploy.md](../vps-deploy.md)).
+5. Chat was run for real on 2026-10-26 against `openai/gpt-oss-120b` on Groq (key in the `gateway-llm` Secret): it created a product and answered the orders question, and the video shows it. If your key changes, check the model name in `GET /openai/v1/models` first: the first model tried was not available to the key.
+6. Know the four sentences you will say about what is public, what is internal, how that is enforced (ClusterIP plus a default-deny NetworkPolicy), and what a member can never see (upstream URLs and credentials).
 
 ## Glossary
 

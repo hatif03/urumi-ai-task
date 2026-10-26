@@ -181,6 +181,8 @@ A **chart** is a folder of templates plus default `values.yaml`. **Installing** 
 - **`--wait`** blocks until the workloads are Ready; **`--wait-for-jobs`** also waits for Jobs. The provisioner uses both with a timeout.
 - **Helm 3 vs 4**: the local machine has Helm 4.3.0; the provisioner image pins a Helm 3 binary. The flags used are the same in both.
 
+Helm refuses to take over an object that exists but was not created by the release: it must carry the label `app.kubernetes.io/managed-by: Helm` and the annotations `meta.helm.sh/release-name` and `meta.helm.sh/release-namespace`. The bootstrap script creates the `platform` and `store` namespaces first (the Secrets need them) while the chart also declares them, so on Helm 3 it labels and annotates them before the install so Helm adopts them (`scripts/vps-bootstrap.sh`). Locally, with Helm 4, the same pre-created namespaces installed without that step. My understanding is that Helm 4 applies with server-side apply, which can take over an existing object's fields, and Helm 3 only adopts what carries the ownership metadata; I observed the difference but did not read the Helm source, so say "observed" if asked.
+
 Helm keeps release state in a Secret in the release's namespace. That is why the provisioner's per-namespace role includes Secrets.
 
 Why Helm for stores and not raw API calls: a chart is a reviewed definition of "a store", `upgrade --install` is the retry, `uninstall` is the teardown, `get values` is the record of what was applied.
@@ -202,6 +204,8 @@ In production you use real DNS (a wildcard such as `*.stores.example.com`) and, 
 
 **k3d** runs k3s (a small, certified Kubernetes) inside Docker containers; that is the local cluster. **k3s** itself is what you install on a VPS. Same Kubernetes, same `local-path` StorageClass, which is why one chart serves both. k3s ships Traefik; both environments disable it and use ingress-nginx so `ingressClassName: nginx` is identical ([ADR 0005](../adr/0005-one-helm-chart-two-value-files.md)).
 
+**`sslip.io`** is a public DNS service that answers `anything.<a-b-c-d>.sslip.io` with the address `a.b.c.d`. With a server at `13.207.8.182`, `dashboard.13-207-8-182.sslip.io`, `shop.13-207-8-182.sslip.io` and `<slug>.stores.13-207-8-182.sslip.io` all resolve to it with no DNS records to create. Because it is real public DNS, Let's Encrypt can validate each name over HTTP-01 (it fetches `http://<name>/.well-known/acme-challenge/...` on port 80), so the certificates are real. The catch: it is not a domain you own, so it suits a demo and not production.
+
 Note: Kubernetes now recommends the Gateway API over Ingress. This project stays on Ingress on purpose; switching needs a new ADR (see `.claude/skills/urumi-stack/SKILL.md`).
 
 **Where this repo uses it.** `deploy/k3d/cluster.yaml`, `deploy/helm/urumi/templates/ingress.yaml`, `deploy/helm/urumi-store/templates/ingress.yaml`, `provisioner.storesDomain` in `values*.yaml`, `templates/cert-manager.yaml`.
@@ -210,7 +214,7 @@ Note: Kubernetes now recommends the Gateway API over Ingress. This project stays
 
 ## 9. Kubernetes security
 
-**Default-deny NetworkPolicy.** By default every pod can talk to every pod. A policy that selects pods and lists `Ingress` and `Egress` types blocks everything not allowed by some policy. This repo applies `default-deny` in `store`, `platform` and `mcp-hosted`, then adds one allow per real edge (`templates/networkpolicy.yaml`). Examples: the WooCommerce MCP pod accepts traffic only from pods labelled `app=gateway` in `platform`; MariaDB accepts only WordPress and the bootstrap pod. The gateway's egress allows the public internet except private ranges, which is the network half of the SSRF defence. Policies need a network plugin that enforces them; k3s does.
+**Default-deny NetworkPolicy.** By default every pod can talk to every pod. A policy that selects pods and lists `Ingress` and `Egress` types blocks everything not allowed by some policy. This repo applies `default-deny` in `store`, `platform` and `mcp-hosted`, then adds one allow per real edge (`templates/networkpolicy.yaml`). Examples: the WooCommerce MCP pod accepts traffic only from pods labelled `app=gateway` in `platform`; MariaDB accepts only WordPress and the bootstrap pod. The gateway's egress allows the public internet except private ranges, which is the network half of the SSRF defence. Policies need a network plugin that enforces them; k3s does. Default deny has a side effect that only a real host showed: cert-manager's HTTP-01 solver runs as a temporary pod behind an Ingress, and ingress-nginx could not reach it, so certificates stayed Pending and the challenge path answered 502. Both charts now carry an `allow-acme-http01-solver` policy.
 
 **RBAC.** A *Role* (namespaced) or *ClusterRole* lists verbs on resources. A *RoleBinding* grants it to a subject, in one namespace. The provisioner is the only workload that can change the cluster. Its rights are layered (`templates/provisioner.yaml`):
 

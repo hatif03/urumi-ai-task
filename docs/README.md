@@ -18,10 +18,14 @@ This directory is the project record. It starts with the planning decisions and 
 | [api.md](api.md) | Every HTTP route and its auth |
 | [mcp-internals.md](mcp-internals.md) | The path of one tool call, names, deadlines, the failure matrix |
 | [dashboard.md](dashboard.md) | The React dashboard: pages, state, accessibility |
-| [vps-deploy.md](vps-deploy.md) | Local to production-like VPS: what changes, TLS |
+| [requirements-coverage.md](requirements-coverage.md) | Every line of the brief mapped to the code and evidence, and what is still open |
+| [architecture.svg](architecture.svg) | The architecture diagram |
+| [submission-answers.md](submission-answers.md) | The answers given on the Round 1 submission form |
+| [vps-deploy.md](vps-deploy.md) | Local to production-like VPS: what changes, TLS, the real AWS run |
 | [runbook-upgrade-rollback.md](runbook-upgrade-rollback.md) | Upgrade, rollback, rotate, back up, recover |
 | [security-test-log.md](security-test-log.md) | The security claims tried against the cluster, with output |
-| [demo-script.md](demo-script.md) | The video, section by section, with commands |
+| [demo-script.md](demo-script.md) | The video, section by section, with commands (for a live walkthrough) |
+| [demo-narration.md](demo-narration.md) | The voice-over of the recorded video, with timestamps (generated) |
 | [evidence/](evidence/) | Raw output of `scripts/e2e.ts`, `security-check.ts`, `oauth-demo.ts`, load test and rollback rehearsal |
 | [study/](study/00-start-here.md) | Interview study material and verified learning resources |
 

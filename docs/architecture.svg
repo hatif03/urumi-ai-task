@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <title>Urumi architecture</title>
+  <desc>Clients reach the dashboard and the gateway through ingress-nginx. The gateway is the only MCP endpoint and the only caller of the upstream MCP servers, which are internal to the cluster.</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#475569"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#0f766e"/></marker>
+    <style>
+      .ns{fill:#f8fafc;stroke:#94a3b8;stroke-width:2;stroke-dasharray:8 6;rx:14}
+      .nst{font-size:17px;font-weight:700;fill:#334155}
+      .box{fill:#fff;stroke:#334155;stroke-width:2;rx:10}
+      .gw{fill:#ecfeff;stroke:#0f766e;stroke-width:3;rx:12}
+      .pub{fill:#fef3c7;stroke:#b45309;stroke-width:2;rx:10}
+      .t{font-size:18px;font-weight:700;fill:#0f172a}
+      .s{font-size:14px;fill:#475569}
+      .line{stroke:#475569;stroke-width:2.5;fill:none}
+      .gl{stroke:#0f766e;stroke-width:3;fill:none}
+      .lab{font-size:13px;fill:#0f766e;font-weight:600}
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="#ffffff"/>
+  <text x="40" y="44" font-size="26" font-weight="800" fill="#0f172a">Urumi: WooCommerce hosting with a team MCP gateway on Kubernetes</text>
+  <text x="40" y="72" class="s" font-size="16">Only the dashboard, the storefronts and the gateway are reachable from the internet. Every upstream MCP server is cluster-internal and answers only the gateway.</text>
+
+  <!-- clients -->
+  <rect class="box" x="40" y="130" width="250" height="100"/>
+  <text class="t" x="60" y="165">Browser</text><text class="s" x="60" y="190">admin and members: dashboard,</text><text class="s" x="60" y="210">chat, storefront</text>
+  <rect class="box" x="40" y="270" width="250" height="100"/>
+  <text class="t" x="60" y="305">External MCP client</text><text class="s" x="60" y="330">Claude Code, Cursor, Inspector:</text><text class="s" x="60" y="350">gateway URL + own API key</text>
+
+  <!-- ingress -->
+  <rect class="pub" x="340" y="170" width="190" height="160"/>
+  <text class="t" x="358" y="205">ingress-nginx</text><text class="s" x="358" y="230">TLS (cert-manager,</text><text class="s" x="358" y="250">Let's Encrypt)</text><text class="s" x="358" y="276">public: dashboard,</text><text class="s" x="358" y="296">shop, store hosts</text>
+
+  <!-- platform namespace -->
+  <rect class="ns" x="580" y="100" width="520" height="740"/>
+  <text class="nst" x="600" y="128">namespace: platform</text>
+  <rect class="box" x="610" y="146" width="230" height="64"/>
+  <text class="t" x="626" y="174">Dashboard</text><text class="s" x="626" y="196">React: servers, keys, audit</text>
+  <rect class="gw" x="610" y="236" width="460" height="196"/>
+  <text class="t" x="628" y="268">Gateway (2 to 4 replicas, stateless)</text>
+  <text class="s" x="628" y="294">MCP server at /mcp: one endpoint, every tool</text>
+  <text class="s" x="628" y="316">MCP client to every upstream, with timeouts</text>
+  <text class="s" x="628" y="338">API keys + OAuth, roles and tool permissions</text>
+  <text class="s" x="628" y="360">audit log, rate limits, SSRF guard, credentials</text>
+  <text class="s" x="628" y="382">chat agent (acts as the logged-in user)</text>
+  <text class="s" x="628" y="410">admission ceiling per replica, batched traces</text>
+  <rect class="box" x="610" y="462" width="220" height="108"/>
+  <text class="t" x="626" y="490">Postgres</text><text class="s" x="626" y="514">users, hashed API keys,</text><text class="s" x="626" y="534">encrypted credentials, grants,</text><text class="s" x="626" y="554">audit, tool cache (PVC)</text>
+  <rect class="box" x="850" y="462" width="220" height="108"/>
+  <text class="t" x="866" y="490">Provisioner</text><text class="s" x="866" y="514">reconciles stores and hosted</text><text class="s" x="866" y="534">servers with Helm; the only</text><text class="s" x="866" y="554">component with cluster RBAC</text>
+  <rect class="box" x="610" y="600" width="460" height="64"/>
+  <text class="t" x="626" y="628">Observability</text><text class="s" x="626" y="650">Prometheus, Grafana, Tempo, OpenTelemetry collector</text>
+  <rect class="box" x="610" y="694" width="220" height="64"/>
+  <text class="t" x="626" y="722">Utility MCP</text><text class="s" x="626" y="744">upstream #2, internal only</text>
+  <rect class="box" x="850" y="694" width="220" height="64"/>
+  <text class="t" x="866" y="722">Policy MCP</text><text class="s" x="866" y="744">upstream #3, internal only</text>
+  <text class="s" x="610" y="796">default-deny NetworkPolicies; each pod admits only its caller</text>
+  <text class="s" x="610" y="818">non-root, read-only filesystem, requests and limits, probes</text>
+
+  <!-- right column -->
+  <rect class="ns" x="1170" y="100" width="400" height="230"/>
+  <text class="nst" x="1190" y="128">namespace: store</text>
+  <rect class="box" x="1190" y="146" width="360" height="64"/>
+  <text class="t" x="1206" y="174">WooCommerce MCP (written by us)</text><text class="s" x="1206" y="196">upstream #1: REST API, scoped key</text>
+  <rect class="box" x="1190" y="232" width="360" height="76"/>
+  <text class="t" x="1206" y="260">WordPress + MariaDB</text><text class="s" x="1206" y="284">persistent volumes; storefront host is public</text>
+
+  <rect class="ns" x="1170" y="356" width="400" height="140"/>
+  <text class="nst" x="1190" y="384">namespace: store-&lt;slug&gt; (bonus)</text>
+  <text class="s" x="1190" y="414">own MCP server, WordPress, MariaDB, Secrets, volumes</text>
+  <text class="s" x="1190" y="436">ResourceQuota, LimitRange, NetworkPolicies, own host</text>
+  <text class="s" x="1190" y="458">registered in the gateway as store_&lt;slug&gt;__tool</text>
+
+  <rect class="ns" x="1170" y="522" width="400" height="130"/>
+  <text class="nst" x="1190" y="550">namespace: mcp-hosted (stand-out)</text>
+  <text class="s" x="1190" y="580">MCP servers deployed from an image an admin names:</text>
+  <text class="s" x="1190" y="602">restricted Pod Security, own Secret, limits,</text>
+  <text class="s" x="1190" y="624">NetworkPolicy, removed cleanly</text>
+
+  <rect class="box" x="1170" y="678" width="400" height="80"/>
+  <text class="t" x="1190" y="708">Kubernetes API + Helm</text><text class="s" x="1190" y="732">stores and hosted servers are Helm releases</text>
+
+  <rect class="box" x="340" y="470" width="190" height="90"/>
+  <text class="t" x="358" y="500">LLM provider</text><text class="s" x="358" y="524">key in a Kubernetes</text><text class="s" x="358" y="544">Secret</text>
+
+  <!-- arrows -->
+  <path class="line" d="M290 180 H340" marker-end="url(#a)"/>
+  <path class="line" d="M290 320 H340" marker-end="url(#a)"/>
+  <path class="line" d="M530 200 H570 V178 H610" marker-end="url(#a)"/>
+  <path class="line" d="M530 300 H570 V334 H610" marker-end="url(#a)"/>
+  <path class="gl" d="M840 432 V462" marker-end="url(#g)"/>
+  <path class="gl" d="M720 432 V462" marker-end="url(#g)"/>
+  <path class="gl" d="M1070 330 H1130 V178 H1190" marker-end="url(#g)"/>
+  <path class="gl" d="M1070 360 H1110 V410 H1170" marker-end="url(#g)"/>
+  <path class="gl" d="M1070 392 H1090 V580 H1170" marker-end="url(#g)"/>
+  <path class="gl" d="M610 410 H596 V726 H610" marker-end="url(#g)"/>
+  <path class="gl" d="M1070 420 H1082 V726 H1070" marker-end="url(#g)"/>
+  <path class="line" d="M1070 510 H1120 V718 H1170" marker-end="url(#a)"/>
+  <path class="gl" d="M610 380 H540 V515 H530" marker-end="url(#g)"/>
+  <text class="s" x="350" y="456" font-size="13">chat calls the LLM</text>
+  <text class="s" x="1124" y="640" font-size="13">Helm</text>
+  <text class="lab" x="30" y="880" font-size="14">Green arrows: gateway to upstreams and to its own data. The gateway reaches utility and policy MCP inside its own namespace.</text>
+</svg>

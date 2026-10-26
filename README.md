@@ -10,7 +10,11 @@ A WooCommerce hosting platform with a team MCP gateway on Kubernetes. An admin c
                                   provisioner ──► Helm, Kubernetes API (namespace per store)
 ```
 
-Read next: [system design and tradeoffs](docs/system-design.md) · [threat model](docs/threat-model.md) · [MCP internals](docs/mcp-internals.md) · [data model](docs/data-model.md) · [API](docs/api.md) · [decisions (ADRs)](docs/adr/README.md) · [VPS deploy](docs/vps-deploy.md) · [upgrade and rollback](docs/runbook-upgrade-rollback.md) · [demo script](docs/demo-script.md) · [security test log](docs/security-test-log.md).
+![Architecture](docs/architecture.svg)
+
+**Status:** everything in the brief is built and was run end to end on a real k3s server on AWS behind Let's Encrypt certificates (65 of 65 checks, [evidence](docs/evidence/e2e-vps-aws-2026-10-26.txt)). [requirements-coverage.md](docs/requirements-coverage.md) maps each line of the brief to the code and the evidence. Demo: [docs/demo-narration.md](docs/demo-narration.md) is the script of the video; `docs/demo/urumi-demo.mp4` is the video itself (how it was made: [Demo video](#demo-video)).
+
+Read next: [requirements coverage](docs/requirements-coverage.md) · [system design and tradeoffs](docs/system-design.md) · [threat model](docs/threat-model.md) · [MCP internals](docs/mcp-internals.md) · [data model](docs/data-model.md) · [API](docs/api.md) · [decisions (ADRs)](docs/adr/README.md) · [VPS deploy](docs/vps-deploy.md) · [upgrade and rollback](docs/runbook-upgrade-rollback.md) · [demo script](docs/demo-script.md) · [security test log](docs/security-test-log.md).
 
 ## What is where
 
@@ -20,7 +24,7 @@ Read next: [system design and tradeoffs](docs/system-design.md) · [threat model
 | WooCommerce MCP server (list/create products, list/get orders, update order status) | `apps/woocommerce-mcp` |
 | Gateway: registry, aggregation, routing, name collisions, timeouts, credentials, roles, keys, audit | `apps/gateway/src` (`router.ts`, `mcp.ts`, `routes/`, `policy.ts`, `crypto.ts`) |
 | Dashboard | `apps/dashboard` ([design note](docs/dashboard.md)) |
-| Chat agent | `apps/gateway/src/chat.ts` |
+| Chat agent | `apps/gateway/src/chat.ts` (Vercel AI SDK; any provider; the live deployment uses `openai/gpt-oss-120b` on Groq) |
 | Helm charts and values | `deploy/helm/urumi` (+ `values-local.yaml`, `values-prod.yaml`), `deploy/helm/urumi-store`, `deploy/helm/urumi-hosted-mcp` |
 | Three upstream servers | WooCommerce, `apps/utility-mcp`, `apps/policy-mcp` |
 | **Bonus: multi-store provisioning** | `apps/provisioner`, `deploy/helm/urumi-store` ([ADR 0013](docs/adr/0013-provisioner-reconciler.md), [0014](docs/adr/0014-store-chart.md), [0015](docs/adr/0015-provisioner-rbac-and-admission.md)) |
@@ -63,7 +67,7 @@ Then:
 
 To enable the chat agent set an LLM key before `dev-up.sh` (or edit the `gateway-llm` Secret and restart the gateway): `LLM_PROVIDER` (`openai`, `google`, `anthropic`), `LLM_MODEL`, `LLM_API_KEY`, and optionally `LLM_BASE_URL` for any OpenAI-compatible endpoint (Groq, OpenRouter, Ollama). Without a key the chat page says so and everything else keeps working.
 
-Free-tier examples (check the provider's current model names): Google Gemini `LLM_PROVIDER=google LLM_MODEL=gemini-2.0-flash LLM_API_KEY=...`; Groq `LLM_PROVIDER=openai LLM_BASE_URL=https://api.groq.com/openai/v1 LLM_MODEL=llama-3.3-70b-versatile LLM_API_KEY=...`. The key lives in the `gateway-llm` Secret, never in the repository or the chart. The gateway's NetworkPolicy allows public internet egress on 80 and 443 (and nothing private), so a hosted LLM API is reachable; a model on your own machine (Ollama) is a private address and would need an explicit egress rule.
+Free-tier examples (check the provider's current model names): Google Gemini `LLM_PROVIDER=google LLM_MODEL=gemini-2.0-flash LLM_API_KEY=...`; Groq `LLM_PROVIDER=openai LLM_BASE_URL=https://api.groq.com/openai/v1 LLM_MODEL=openai/gpt-oss-120b LLM_API_KEY=...` (what the live deployment runs; `llama-3.3-70b-versatile` was not available to the key used, so check `GET /openai/v1/models` for yours). The key lives in the `gateway-llm` Secret, never in the repository or the chart. The gateway's NetworkPolicy allows public internet egress on 80 and 443 (and nothing private), so a hosted LLM API is reachable; a model on your own machine (Ollama) is a private address and would need an explicit egress rule.
 
 ## Place an order
 
@@ -106,9 +110,13 @@ Dashboard, **Hosted** (admin): give a slug, an image from an allowed registry wi
 
 ## Production (k3s VPS)
 
-Run for real on AWS EC2 + k3s with Let's Encrypt certificates on 2026-10-26: [docs/requirements-coverage.md](docs/requirements-coverage.md) maps every line of the brief to where it is met; [evidence](docs/evidence/vps-aws-deployment-2026-10-26.txt).
+**Done and verified.** The same chart ran on an AWS EC2 instance (t3.large, Ubuntu 24.04, k3s) on 2026-10-26: dashboard at `https://dashboard.<ip-with-dashes>.sslip.io`, storefront at `https://shop.<...>`, stores at `https://<slug>.stores.<...>`, all with real Let's Encrypt certificates from cert-manager. The names are `sslip.io` hostnames that resolve to the instance's Elastic IP, which needs no DNS records; a domain you own is a values change only. The whole definition of done, the multi-store bonus and a hosted server passed there (65 of 65 checks, including killing an upstream pod): [e2e output](docs/evidence/e2e-vps-aws-2026-10-26.txt), [cluster state](docs/evidence/vps-aws-deployment-2026-10-26.txt).
 
-[docs/vps-deploy.md](docs/vps-deploy.md) is the guide. Short form: DNS for `dashboard.<domain>`, `shop.<domain>` and `*.stores.<domain>`, push the six images to a registry with a version tag, then on the VPS `DOMAIN=... EMAIL=... REGISTRY=... TAG=... bash scripts/vps-bootstrap.sh`. It installs k3s (Traefik disabled), ingress-nginx and cert-manager, generates the Secrets, installs the same chart with `values-prod.yaml`, and runs `helm test`. What differs from local is a table of values, listed in that guide. Upgrade and rollback: [runbook](docs/runbook-upgrade-rollback.md).
+[docs/vps-deploy.md](docs/vps-deploy.md) is the guide, with the exact AWS CLI steps and the four defects the real run exposed and fixed. Short form: DNS (or `sslip.io`) for `dashboard.<domain>`, `shop.<domain>` and `*.stores.<domain>`, get the six images onto the node (a registry with a version tag, or `docker save | ssh ... k3s ctr images import -` as the AWS run did), then on the VPS `DOMAIN=... EMAIL=... REGISTRY=... TAG=... bash scripts/vps-bootstrap.sh`. It installs k3s (Traefik disabled), ingress-nginx and cert-manager, generates the Secrets, installs the same chart with `values-prod.yaml`, and runs `helm test`. What differs from local is a table of values in that guide. Upgrade and rollback: [runbook](docs/runbook-upgrade-rollback.md). To prove a deployment from your laptop: `ENTRY=https://dashboard.$DOMAIN DASHBOARD_HOST=dashboard.$DOMAIN SHOP_HOST=shop.$DOMAIN STORE_HOST_SUFFIX=stores.$DOMAIN HOSTED_IMAGE=<image> ADMIN_PASSWORD=... STORES=1 HOSTED=1 SKIP_KUBECTL=1 bun scripts/e2e.ts`.
+
+## Demo video
+
+The video shows the live AWS deployment: system design, the definition of done with two users (an admin and a member), Kubernetes, MCP internals, security, the chat agent, and local-to-VPS with an upgrade that fails and rolls back. It is generated, not edited by hand: `scripts/demo/record.ts` drives a real browser and a terminal against the live system and records each scene; `scripts/demo/assemble.ts` joins the scenes, speaks the narration with a synthetic text-to-speech voice and writes [docs/demo-narration.md](docs/demo-narration.md), the narration script with timestamps. It needs Edge or Chrome, ffmpeg, `pip install edge-tts`, `npm i -g @modelcontextprotocol/inspector`, ssh access to the server and `ADMIN_PASSWORD`. The architecture diagram is [docs/architecture.svg](docs/architecture.svg). Terminal output in the video is real: each command is run on the server (or on the laptop, for the external client) and its output printed, with the typing animated.
 
 ## Checks
 
@@ -120,6 +128,7 @@ helm test urumi -n platform                                                    #
 bun scripts/e2e.ts                                                             # the definition of done, two users, against the cluster
 STORES=1 bun scripts/e2e.ts                                                    # + multi-store bonus
 bun scripts/security-check.ts                                                  # SSRF, NetworkPolicy, RBAC, secrets at rest
+bun scripts/demo/record.ts && bun scripts/demo/assemble.ts                     # record and voice the demo video against the live system
 ```
 A throwaway Postgres for the database tests: `docker run -d --name urumi-test-pg -e POSTGRES_PASSWORD=test -e POSTGRES_USER=urumi -e POSTGRES_DB=urumi -p 55432:5432 postgres:16-alpine`.
 

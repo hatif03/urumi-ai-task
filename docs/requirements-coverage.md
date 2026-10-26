@@ -25,7 +25,7 @@ Every line of the Round 1 brief, where it is met, and how it was checked. "Live"
 | At least three upstream servers | Done | WooCommerce, utility, policy (plus per-store and hosted ones) |
 | Two roles; per-user API keys, revocable, hashed | Done | admin/member; SHA-256 key hashes; e2e revoke test |
 | Audit log with user, server, tool, time, duration, outcome, visible in dashboard | Done | Audit page; e2e "Audit" section |
-| Chat agent calling tools through the gateway, shows tools called, acts as the logged-in user | Done in code and tests | `apps/gateway/src/chat.ts`; tested with a fake LLM. **Not run against a real LLM yet**, see below |
+| Chat agent calling tools through the gateway, shows tools called, acts as the logged-in user | Done, live | `apps/gateway/src/chat.ts`; run on the AWS deployment with `openai/gpt-oss-120b` on Groq: it created a product, then answered "what orders came in today" with the order placed by hand, and each call shows in the audit log as actor `chat` under the user's name. The unit tests use a fake model |
 | LLM key handled as a secret | Done | `gateway-llm` Kubernetes Secret, never in source or values files |
 | Definition of done flow with two users | Done, live | `scripts/e2e.ts` (65 checks) on the AWS deployment |
 
@@ -57,12 +57,11 @@ All of it: create/delete from the dashboard, several in parallel, a namespace pe
 | System design and trade-offs note | `docs/system-design.md` |
 | Threat model note | `docs/threat-model.md` |
 | List of bonus and stand-out items | This file and README |
-| **Demo video** | **Not done: you record it** (script in [demo-script.md](demo-script.md)) |
+| Demo video | Generated against the live deployment: `docs/demo/urumi-demo.mp4`; narration script [demo-narration.md](demo-narration.md); how: README, Demo video |
 | **Form submission** | **Not done: you submit it** (https://forms.gle/nftwgyNeenSDmiRb6) |
 
 ## What is still open
 
-1. **A live chat run with a real LLM.** The tool loop is tested with a fake model, and everything it calls is proven live, but the brief says the chat agent must work in the demo. Put a key in the `gateway-llm` Secret (any OpenAI-compatible provider works; the README lists free tiers), then run the chat steps of [demo-script.md](demo-script.md).
-2. **Demo video and form.** Yours to record and submit.
-3. **A real domain.** The live deployment uses `sslip.io` names that resolve to the instance's Elastic IP. The certificates are real Let's Encrypt certificates, but the names are not ones you own. Pointing a real domain at it is a values change only.
-4. **Known limits** (stated rather than hidden): one laptop node cannot show throughput scaling; one single-node VPS has no node-failure tolerance; the alert rules have no receiver; images were copied to the node rather than pulled from a registry.
+1. **Demo video and form.** The video is generated (`docs/demo/urumi-demo.mp4`, script in [demo-narration.md](demo-narration.md)); the form is yours to submit.
+2. **A real domain.** The live deployment uses `sslip.io` names that resolve to the instance's Elastic IP. The certificates are real Let's Encrypt certificates, but the names are not ones you own. Pointing a real domain at it is a values change only.
+3. **Known limits** (stated rather than hidden): one laptop node cannot show throughput scaling; one single-node VPS has no node-failure tolerance; the alert rules have no receiver; images were copied to the node rather than pulled from a registry.

@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Date: 2026-10-20
-- Outcome: `helm template -f values-prod.yaml` renders TLS blocks and the cert-manager annotation on the dashboard and shop Ingresses and a Let's Encrypt `ClusterIssuer`. The same chart renders a self-signed `ClusterIssuer` for a rehearsal on k3d. The real-VPS result is recorded in `docs/log.md` only if a VPS run was done; otherwise `docs/vps-deploy.md` is a checklist for a first run.
+- Outcome: `helm template -f values-prod.yaml` renders TLS blocks and the cert-manager annotation on the dashboard and shop Ingresses and a Let's Encrypt `ClusterIssuer`. The same chart renders a self-signed `ClusterIssuer` for a rehearsal on k3d. A real run was done on 2026-10-26 on AWS EC2 with k3s and Let's Encrypt certificates for `sslip.io` names; the full end-to-end suite passed (65 of 65, [evidence](../evidence/e2e-vps-aws-2026-10-26.txt)). The real run found that the default-deny NetworkPolicies blocked cert-manager's HTTP-01 solver pod, so both charts now carry `allow-acme-http01-solver`; see `docs/vps-deploy.md` and `docs/log.md`.
 
 ## Context
 

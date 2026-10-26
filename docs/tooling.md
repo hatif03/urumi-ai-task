@@ -14,6 +14,8 @@ What is installed for this repo, what we deliberately did not install, and how t
 | k3d 5.9.0 | Local Kubernetes. Installed with `winget install k3d.k3d` | Installed. Same new-shell note as Helm |
 | WP-CLI | Store bootstrap | Not installed on the host. PHP is not installed, and the bootstrap runs `wordpress:cli` inside the cluster |
 | puppeteer-core 25 | Drives the real dashboard from `scripts/ui-check.ts` through an installed Edge or Chrome (no browser download; set `BROWSER_PATH` to choose) | Root devDependency |
+| ffmpeg, edge-tts, MCP Inspector CLI | The demo video: `scripts/demo/` records scenes with Puppeteer, stitches them with ffmpeg and speaks the narration with Microsoft's online voices through the `edge-tts` Python package; the Inspector CLI is the external MCP client in the video (`npm i -g @modelcontextprotocol/inspector`) | Installed on the host |
+| aws CLI 2 | Provisions the EC2 instance for the VPS deployment (`docs/vps-deploy.md`) | Authenticated on the host |
 | cert-manager | TLS issuers for the VPS and the local rehearsal | Installed into a cluster with Helm, not on the host (`docs/vps-deploy.md`) |
 | Helm 3.18 inside the provisioner image | Runs `helm upgrade --install` for stores and hosted servers | Downloaded and checksum-verified in `apps/provisioner/Dockerfile` |
 

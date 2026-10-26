@@ -90,7 +90,7 @@ Detail and the failure matrix: [mcp-internals.md](mcp-internals.md).
 
 ## What changes for production
 
-DNS (dashboard, shop, wildcard for stores), ingress with cert-manager TLS, a registry and version-tagged images, a larger storage class and claims, higher limits, HPA max 4, two provisioner replicas, secrets generated on the node. The list of every value is in [vps-deploy.md](vps-deploy.md); the local domain approach (hosts file for two names, `*.localhost` for stores) is in the README.
+DNS (dashboard, shop, wildcard for stores), ingress with cert-manager TLS, a registry and version-tagged images, a larger storage class and claims, higher limits, HPA max 4, two provisioner replicas, secrets generated on the node. The list of every value is in [vps-deploy.md](vps-deploy.md), which also records the real AWS k3s run (Let's Encrypt certificates, 65 of 65 end-to-end checks) and the four defects it exposed (an ACME solver blocked by the default-deny policies, CRLF line endings, a missing `unzip`, Helm 3 namespace adoption); the local domain approach (hosts file for two names, `*.localhost` for stores) is in the README.
 
 ## Scaling and observability
 

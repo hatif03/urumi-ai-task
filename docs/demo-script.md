@@ -1,5 +1,7 @@
 # Demo script
 
+The submission video is generated against the live AWS deployment (`scripts/demo/record.ts`; its narration is [demo-narration.md](demo-narration.md)). This file is the manual version, for a live walkthrough against the local cluster.
+
 For the submission video and for the live walkthrough. It follows the brief's "Demo video requirements" in order, and the definition of done with **two users** inside it. Total about 15 minutes; the cut-down version is the lines marked **(short)**. Commands assume the local cluster from `bash scripts/dev-up.sh` and two terminals plus a browser.
 
 Users: **A** = `ada` (admin). **B** = `bea` (member, created in step 2). Have `deploy/secrets/generated.env` open for passwords.
