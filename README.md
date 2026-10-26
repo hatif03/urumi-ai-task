@@ -106,6 +106,8 @@ Dashboard, **Hosted** (admin): give a slug, an image from an allowed registry wi
 
 ## Production (k3s VPS)
 
+Run for real on AWS EC2 + k3s with Let's Encrypt certificates on 2026-10-26: [docs/requirements-coverage.md](docs/requirements-coverage.md) maps every line of the brief to where it is met; [evidence](docs/evidence/vps-aws-deployment-2026-10-26.txt).
+
 [docs/vps-deploy.md](docs/vps-deploy.md) is the guide. Short form: DNS for `dashboard.<domain>`, `shop.<domain>` and `*.stores.<domain>`, push the six images to a registry with a version tag, then on the VPS `DOMAIN=... EMAIL=... REGISTRY=... TAG=... bash scripts/vps-bootstrap.sh`. It installs k3s (Traefik disabled), ingress-nginx and cert-manager, generates the Secrets, installs the same chart with `values-prod.yaml`, and runs `helm test`. What differs from local is a table of values, listed in that guide. Upgrade and rollback: [runbook](docs/runbook-upgrade-rollback.md).
 
 ## Checks

@@ -10,6 +10,10 @@ import { readFileSync } from "node:fs";
 const ENTRY = process.env.ENTRY ?? "http://127.0.0.1";
 const DASH = process.env.DASHBOARD_HOST ?? "dashboard.local";
 const SHOP = process.env.SHOP_HOST ?? "shop.local";
+// Stores are served at <slug>.<suffix>: shop.localhost on k3d, stores.<domain> on the VPS.
+// Image for the hosted-server check: a name the cluster can run and the hosted-registry allowlist accepts.
+const HOSTED_IMAGE = process.env.HOSTED_IMAGE ?? "urumi-utility-mcp:local";
+const STORE_SUFFIX = process.env.STORE_HOST_SUFFIX ?? "shop.localhost";
 const env = Object.fromEntries(
   (() => { try { return readFileSync("deploy/secrets/generated.env", "utf8").split("\n").filter(Boolean).map((l) => l.split(/=(.*)/s).slice(0, 2)); } catch { return []; } })(),
 );
@@ -220,14 +224,14 @@ if (!process.env.STORES) {
     const listed = JSON.parse(text(await call(A, `store_${slug}__list_products`, { per_page: 5 }))) as { id: number }[] | { items: { id: number }[] };
     return (Array.isArray(listed) ? listed : listed.items)[0]!.id;
   };
-  const orders = await Promise.all(slugs.map(async (slug) => placeOrder(`${slug}.shop.localhost`, await storeProduct(slug), slug)));
+  const orders = await Promise.all(slugs.map(async (slug) => placeOrder(`${slug}.${STORE_SUFFIX}`, await storeProduct(slug), slug)));
   check(orders.every((o) => o.ok), "an order is placed on each storefront", orders.map((o) => o.detail).join(" | "));
   const counts = await Promise.all(slugs.map(async (slug) => {
     const body = JSON.parse(text(await call(A, `store_${slug}__list_orders`, today()))) as unknown[];
     return Array.isArray(body) ? body.length : -1;
   }));
   check(counts.every((n) => n >= 1), "today's orders compare across the two stores", counts.join(" vs "));
-  const bytes = await Promise.all(slugs.map((s) => http(`${s}.shop.localhost`, "/")));
+  const bytes = await Promise.all(slugs.map((s) => http(`${s}.${STORE_SUFFIX}`, "/")));
   check(bytes.every((r) => r.status === 200), "each store has its own working storefront URL");
 
   if (!process.env.SKIP_KUBECTL) {
@@ -273,7 +277,7 @@ if (!process.env.HOSTED) {
   const evil = await api(admin.cookie, "POST", "/api/hosted", { slug, displayName: "x", image: "evil.example/miner:1", size: "small" });
   check(evil.status === 400, "an image from a registry that is not allowed is refused", evil.json.error);
   check((await api(memberLogin.cookie, "GET", "/api/hosted")).status === 403, "a member cannot see or create hosted servers");
-  const created = await api(admin.cookie, "POST", "/api/hosted", { slug, displayName: "Hosted echo", image: "urumi-utility-mcp:local", size: "small", env: { MODE: "demo" }, secretEnv: { API_TOKEN: "hosted-secret-canary" } });
+  const created = await api(admin.cookie, "POST", "/api/hosted", { slug, displayName: "Hosted echo", image: HOSTED_IMAGE, size: "small", env: { MODE: "demo" }, secretEnv: { API_TOKEN: "hosted-secret-canary" } });
   check(created.status === 201, "an admin deploys the utility image as a hosted server", created.json.error ?? created.json.hosted?.status);
   let state = created.json.hosted;
   const until = Date.now() + 4 * 60 * 1000;

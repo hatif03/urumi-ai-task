@@ -1,0 +1,103 @@
+# Live deployment: AWS EC2 t3.large, Ubuntu 24.04, k3s, ap-south-1, 2026-10-26
+# Dashboard https://dashboard.13-207-8-182.sslip.io   Storefront https://shop.13-207-8-182.sslip.io   Stores https://<slug>.stores.13-207-8-182.sslip.io
+
+## TLS as seen from the internet
+dashboard: subject=CN=dashboard.13-207-8-182.sslip.io
+dashboard: issuer=C=US, O=Let's Encrypt, CN=YR2
+dashboard: notBefore=Oct 26 15:22:35 2026 GMT
+dashboard: notAfter=Jan 24 15:22:34 2027 GMT
+shop: subject=CN=shop.13-207-8-182.sslip.io
+shop: issuer=C=US, O=Let's Encrypt, CN=YR2
+shop: notBefore=Oct 26 15:22:29 2026 GMT
+shop: notAfter=Jan 24 15:22:28 2027 GMT
+
+    "gitVersion": "v1.36.5+k3s1",
+## nodes
+NAME              STATUS   ROLES           AGE   VERSION        INTERNAL-IP    EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION           CONTAINER-R
+ip-172-31-2-208   Ready    control-plane   53m   v1.36.5+k3s1   172.31.2.208   <none>        Ubuntu 24.04.5 LTS   7.0.0-1014-aws (amd64)   containerd:
+
+## helm releases
+NAME         	NAMESPACE    	REVISION	UPDATED                                	STATUS  	CHART               	APP VERSION
+cert-manager 	cert-manager 	3       	2026-10-26 16:20:35.04366636 +0000 UTC 	deployed	cert-manager-v1.21.3	v1.21.3    
+ingress-nginx	ingress-nginx	3       	2026-10-26 16:20:25.704369051 +0000 UTC	deployed	ingress-nginx-4.15.1	1.15.1     
+urumi        	platform     	2       	2026-10-26 16:20:42.156756965 +0000 UTC	deployed	urumi-0.1.0         	0.1.0      
+
+## certificates
+NAMESPACE   NAME             READY   SECRET           AGE
+platform    urumi-tls        True    urumi-tls        34m
+store       urumi-tls-shop   True    urumi-tls-shop   34m
+
+## ingresses
+NAMESPACE   NAME        CLASS   HOSTS                             ADDRESS        PORTS     AGE
+platform    dashboard   nginx   dashboard.13-207-8-182.sslip.io   172.31.2.208   80, 443   34m
+store       shop        nginx   shop.13-207-8-182.sslip.io        172.31.2.208   80, 443   34m
+
+## pods
+NAME                              READY   STATUS    RESTARTS   AGE
+dashboard-68c86d49f5-f8r2l        1/1     Running   0          26m
+dashboard-68c86d49f5-hsn9z        1/1     Running   0          26m
+gateway-68659d8585-7hct5          1/1     Running   0          26m
+gateway-68659d8585-w4hts          1/1     Running   0          26m
+grafana-86575bc4d4-d7hbf          1/1     Running   0          34m
+otel-collector-69c749868b-rk7n7   1/1     Running   0          34m
+policy-mcp-59dfc5db9f-9pmnh       1/1     Running   0          3m12s
+policy-mcp-59dfc5db9f-gx9lt       1/1     Running   0          3m12s
+postgres-5f6bbf5b85-v4xvc         1/1     Running   0          34m
+prometheus-5b45c486dd-gswdv       1/1     Running   0          34m
+provisioner-74b79bff56-gjgcl      1/1     Running   0          26m
+provisioner-74b79bff56-msvgj      1/1     Running   0          25m
+tempo-7d68b95cbc-klt2k            1/1     Running   0          34m
+utility-mcp-797dff997f-299zh      1/1     Running   0          26m
+utility-mcp-797dff997f-fbq4q      1/1     Running   0          26m
+NAME                               READY   STATUS      RESTARTS      AGE
+mariadb-0                          1/1     Running     0             34m
+store-bootstrap-bjzvk              0/1     Completed   2 (33m ago)   34m
+woocommerce-mcp-5946c6f95d-cmrdw   1/1     Running     0             26m
+woocommerce-mcp-5946c6f95d-w8kkh   1/1     Running     0             26m
+wordpress-6748749bc9-jhjpn         1/1     Running     0             34m
+
+## volumes
+NAMESPACE   NAME             STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+platform    postgres         Bound    pvc-68a29593-3498-43c7-84c1-159b24128da1   10Gi       RWO            local-path     <unset>                 34m
+platform    prometheus       Bound    pvc-f0a1cce0-9a19-4f6e-bb10-2b805695bcc9   10Gi       RWO            local-path     <unset>                 34m
+platform    tempo            Bound    pvc-4fa123e5-834f-4469-8649-db78181c8654   5Gi        RWO            local-path     <unset>                 34m
+store       data-mariadb-0   Bound    pvc-3116a063-4380-4b01-8ee5-ad47e2d5b9a1   10Gi       RWO            local-path     <unset>                 34m
+store       wordpress        Bound    pvc-75629dfe-5bd9-44e2-9ba3-11ea4ec5d1db   10Gi       RWO            local-path     <unset>                 34m
+
+## hpa
+NAME          REFERENCE                TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
+dashboard     Deployment/dashboard     cpu: 4%/70%   2         4         2          34m
+gateway       Deployment/gateway       cpu: 2%/70%   2         4         2          34m
+policy-mcp    Deployment/policy-mcp    cpu: 2%/70%   2         4         2          34m
+utility-mcp   Deployment/utility-mcp   cpu: 2%/70%   2         4         2          34m
+
+## network policies
+NAMESPACE    NAME                       POD-SELECTOR                                       AGE
+mcp-hosted   default-deny               <none>                                             34m
+platform     allow-acme-http01-solver   acme.cert-manager.io/http01-solver=true            26m
+platform     allow-dns                  <none>                                             34m
+platform     dashboard                  app=dashboard                                      34m
+platform     default-deny               <none>                                             34m
+platform     extra-mcp                  app in (policy-mcp,utility-mcp)                    34m
+platform     gateway                    app=gateway                                        34m
+platform     observability              app in (grafana,otel-collector,prometheus,tempo)   34m
+platform     postgres                   app=postgres                                       34m
+platform     provisioner                app=provisioner                                    34m
+platform     urumi-test                 app=urumi-test                                     34m
+store        allow-acme-http01-solver   acme.cert-manager.io/http01-solver=true            26m
+store        allow-dns                  <none>                                             34m
+store        bootstrap-egress           app=store-bootstrap                                34m
+store        default-deny               <none>                                             34m
+store        mariadb-ingress            app=mariadb                                        34m
+store        woocommerce-mcp            app=woocommerce-mcp                                34m
+store        wordpress-egress           app=wordpress                                      34m
+store        wordpress-ingress          app=wordpress                                      34m
+
+## listening ports on the host (public)
+State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess
+LISTEN 0      4096         0.0.0.0:22         0.0.0.0:*          
+LISTEN 0      4096               *:6443             *:*          
+LISTEN 0      4096            [::]:22            [::]:*          
+
+## port 6443 from the internet
+closed/filtered

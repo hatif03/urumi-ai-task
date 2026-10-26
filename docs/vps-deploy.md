@@ -2,7 +2,7 @@
 
 The same chart that runs on k3d runs on a single-node k3s VPS. Nothing in `deploy/helm/urumi/templates` changes; the differences are values and secrets. Decision record: [ADR 0018](adr/0018-tls-and-vps-strategy.md), [ADR 0005](adr/0005-one-helm-chart-two-value-files.md).
 
-> **Status of this document.** The chart renders and lints with `values-prod.yaml`, and the TLS wiring (cert-manager, certificate secrets, `https` cookies and OAuth issuer) was rehearsed on the local k3d cluster with a private CA (`docs/log.md`, 2026-10-20). A run on a real VPS with a public domain and Let's Encrypt has **not** been done from this repository; the steps below are the checklist for that run. If you do it, record the date and what differed in `docs/log.md`.
+> **Status of this document.** This procedure was run for real on 2026-10-26 on an AWS EC2 instance (t3.large, Ubuntu 24.04, k3s v1.36, ap-south-1) with real Let's Encrypt certificates. The full end-to-end suite passed there, 65 of 65 checks including two stores, a hosted server and killing an upstream pod ([e2e output](evidence/e2e-vps-aws-2026-10-26.txt), [cluster state](evidence/vps-aws-deployment-2026-10-26.txt)). What differed from the plan is in [What the real run changed](#what-the-real-run-changed). The domain was `*.sslip.io`, which resolves to the instance's address; a domain you own works the same way.
 
 ## What you need
 
@@ -70,3 +70,45 @@ curl -k --resolve dashboard.local:443:127.0.0.1 https://dashboard.local/.well-kn
 - Put `/root/urumi-secrets.env` in a password manager; it is the only copy of the key that decrypts stored upstream credentials.
 - `kubectl -n platform get networkpolicy` should list the policies from the chart; k3s enforces them with its built-in network policy controller.
 - Upgrades and rollbacks: [runbook](runbook-upgrade-rollback.md).
+
+## The AWS run, step by step
+
+These are the commands used (AWS CLI v2, region `ap-south-1`). Replace names as you like.
+
+```sh
+# network and key: SSH only from your own address, 80 and 443 from anywhere, 6443 closed
+aws ec2 create-key-pair --key-name urumi-r1 --query KeyMaterial --output text > ~/.ssh/urumi-r1.pem && chmod 600 ~/.ssh/urumi-r1.pem
+SG=$(aws ec2 create-security-group --group-name urumi-r1 --description "urumi k3s" --query GroupId --output text)
+aws ec2 authorize-security-group-ingress --group-id $SG --ip-permissions   "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=$(curl -s https://checkip.amazonaws.com)/32}]"   "IpProtocol=tcp,FromPort=80,ToPort=80,IpRanges=[{CidrIp=0.0.0.0/0}]"   "IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges=[{CidrIp=0.0.0.0/0}]"
+# instance (Ubuntu 24.04 AMI found with describe-images, owner 099720109477), 60 GiB gp3, a stable address
+aws ec2 run-instances --image-id <ami> --instance-type t3.large --key-name urumi-r1 --security-group-ids $SG   --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=60,VolumeType=gp3,DeleteOnTermination=true}'
+EIP=$(aws ec2 allocate-address --domain vpc --query PublicIp --output text)
+aws ec2 associate-address --instance-id <id> --public-ip $EIP
+```
+
+DNS: with no domain, `sslip.io` turns `dashboard.13-207-8-182.sslip.io` into `13.207.8.182`, so `DOMAIN=13-207-8-182.sslip.io` gives `dashboard.`, `shop.` and `<slug>.stores.` names with no DNS records at all, and Let's Encrypt can validate each host over HTTP-01.
+
+Images: no registry was used. They were built locally, tagged `local/urumi-<name>:1.0.1` and streamed into k3s's containerd:
+
+```sh
+docker save local/urumi-gateway:1.0.1 ... | gzip | ssh ubuntu@$EIP 'gunzip | sudo k3s ctr images import -'
+```
+
+Then `DOMAIN=13-207-8-182.sslip.io EMAIL=you@example.com REGISTRY=local TAG=1.0.1 bash scripts/vps-bootstrap.sh` on the instance. To prove it from your workstation, run the suite over HTTPS (the checks that need `kubectl` are skipped unless `SKIP_KUBECTL` is unset and the cluster is reachable; running the suite on the instance itself covers them):
+
+```sh
+ENTRY=https://dashboard.$DOMAIN DASHBOARD_HOST=dashboard.$DOMAIN SHOP_HOST=shop.$DOMAIN STORE_HOST_SUFFIX=stores.$DOMAIN HOSTED_IMAGE=local/urumi-utility-mcp:1.0.1 ADMIN_PASSWORD=... STORES=1 HOSTED=1 SKIP_KUBECTL=1 bun scripts/e2e.ts
+```
+
+Cost: about 0.083 USD an hour for the instance plus the volume; an Elastic IP is free while attached. Tear down with `aws ec2 terminate-instances`, `aws ec2 release-address`, `aws ec2 delete-security-group` and `aws ec2 delete-key-pair`.
+
+## What the real run changed
+
+Four defects only a real host exposes, all fixed in the repository:
+
+1. **Certificates stayed Pending.** The default-deny NetworkPolicies stopped ingress-nginx from reaching cert-manager's HTTP-01 solver pod (a 502 on `/.well-known/acme-challenge`). Both charts now carry `allow-acme-http01-solver`.
+2. **`vps-bootstrap.sh` failed on CRLF line endings** (the archive was made on Windows). `.gitattributes` now forces LF.
+3. **Bun's installer needs `unzip`**, which a fresh Ubuntu image lacks; the bootstrap installs it.
+4. **Helm 3 cannot adopt namespaces it did not create.** The Secrets step creates `platform` and `store` first, so the bootstrap now gives them Helm's ownership labels and annotations.
+
+Also `scripts/e2e.ts` gained `STORE_HOST_SUFFIX` and `HOSTED_IMAGE` so it can target a real host.
